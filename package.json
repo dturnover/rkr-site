@@ -6,9 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "import": "tsx scripts/import-csv.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.4",
+    "@vercel/blob": "^2.5.0",
+    "csv-parse": "^7.0.1",
+    "drizzle-orm": "^0.45.2",
+    "iconv-lite": "^0.7.3",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4"
@@ -21,6 +27,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "typescript": "^5"
   }
 }

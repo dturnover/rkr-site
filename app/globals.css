@@ -1,26 +1,81 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Parchment / book-cover palette */
+  --parchment-bg: #ecdfc4;
+  --parchment-bg-deep: #dfcba0;
+  --paper-stain: #c6a877;
+  --ink-brown: #3b2a1a;
+  --ink-brown-soft: #5c4630;
+  --frame-black: #241b12;
+  --rasta-red: #9e2b25;
+  --rasta-gold: #c79a3e;
+  --rasta-green: #4b6c43;
+  --link-blue-muted: #5b4a8a;
+  --white-paper: #f7f1e1;
+  --error-red: #7a2e20;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-parchment: var(--parchment-bg);
+  --color-parchment-deep: var(--parchment-bg-deep);
+  --color-paper-stain: var(--paper-stain);
+  --color-ink: var(--ink-brown);
+  --color-ink-soft: var(--ink-brown-soft);
+  --color-frame: var(--frame-black);
+  --color-rasta-red: var(--rasta-red);
+  --color-rasta-gold: var(--rasta-gold);
+  --color-rasta-green: var(--rasta-green);
+  --color-link: var(--link-blue-muted);
+  --color-paper: var(--white-paper);
+  --color-error: var(--error-red);
+
+  --font-display: var(--font-cinzel), Georgia, "Times New Roman", serif;
+  --font-body: var(--font-garamond), Georgia, "Times New Roman", serif;
+  --font-catalog: var(--font-courier-prime), "Courier New", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--parchment-bg);
+  color: var(--ink-brown);
+  font-family: var(--font-body);
+  background-image:
+    radial-gradient(ellipse 60% 40% at 15% 10%, rgba(198, 168, 119, 0.35), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 90% 80%, rgba(198, 168, 119, 0.3), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.23  0 0 0 0 0.16  0 0 0 0 0.09  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+::selection {
+  background: var(--rasta-gold);
+  color: var(--frame-black);
+}
+
+.text-title-gradient {
+  background: linear-gradient(180deg, var(--rasta-red) 0%, var(--rasta-gold) 55%, var(--rasta-green) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.frame-double {
+  border: 2px solid var(--frame-black);
+  outline: 1px solid var(--frame-black);
+  outline-offset: 5px;
+}
+
+a {
+  color: var(--link-blue-muted);
+}
+
+a:hover {
+  color: var(--rasta-red);
+}
+
+table {
+  font-variant-numeric: tabular-nums;
 }

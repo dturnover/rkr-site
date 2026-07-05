@@ -1,65 +1,71 @@
-import Image from "next/image";
+import Link from "next/link";
+import { FACET_ORDER, FACETS } from "@/lib/facetConfig";
+import { getDatabaseStatus } from "@/lib/import/atomicSwap";
 
-export default function Home() {
+// The catalogue can change at any time via an admin CSV upload without a
+// redeploy, so this page (which has no cookies/searchParams to otherwise
+// force dynamic rendering) must not be statically cached at build time.
+export const dynamic = "force-dynamic";
+
+const TILE_ICONS: Record<string, string> = {
+  artists: "🎤",
+  countries: "🗺",
+  years: "📅",
+  formats: "💿",
+  labels: "🏷",
+  producers: "🎛",
+  riddims: "🥁",
+  genres: "🎼",
+  origins: "✎",
+};
+
+export default async function Home() {
+  const status = await getDatabaseStatus();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="space-y-10">
+      <section className="text-center max-w-2xl mx-auto">
+        <p className="font-body text-ink leading-relaxed">
+          Compiled over decades by Michael Turner &amp; Robert Schoenfeld,{" "}
+          <em>Roots Knotty Roots</em> is the most comprehensive discography of
+          Jamaican music ever assembled &mdash; every 7&Prime;, 10&Prime;, and 12&Prime; single,
+          from calypso and mento through ska, rocksteady, reggae and dancehall.
+          This site puts the entire catalogue online, free, for good.
+        </p>
+        {status.hasDatabase && (
+          <p className="font-body text-xs text-ink-soft mt-3">
+            {status.rowCount.toLocaleString()} tracks in the catalogue
+            {status.lastUpdated
+              ? ` · last updated ${new Date(status.lastUpdated).toLocaleDateString()}`
+              : ""}
           </p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="font-display text-2xl text-center text-ink mb-6">Browse the Catalogue</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {FACET_ORDER.map((slug) => (
+            <Link
+              key={slug}
+              href={`/browse/${slug}`}
+              className="frame-double bg-paper flex flex-col items-center justify-center gap-2 py-8 hover:bg-parchment-deep/50 transition-colors"
+            >
+              <span className="text-3xl" aria-hidden>
+                {TILE_ICONS[slug]}
+              </span>
+              <span className="font-display text-lg text-ink">{FACETS[slug].label}</span>
+            </Link>
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </section>
+
+      {!status.hasDatabase && (
+        <p className="text-center font-body text-error">
+          No data has been imported yet. Run <code>npm run import -- --file=...</code>{" "}
+          to load the catalogue.
+        </p>
+      )}
     </div>
   );
 }
