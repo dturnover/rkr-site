@@ -37,7 +37,6 @@ export const CSV_FIELDS = [
 
 const INSERT_COLUMNS = CSV_FIELDS.filter((f) => f !== "blank1");
 const FTS_COLUMNS = ["title", "title_credit", "artist", "artist_credit", "notes"] as const;
-const FTS_INDEXES = FTS_COLUMNS.map((c) => INSERT_COLUMNS.indexOf(c));
 
 function nullIfBlank(value: string | undefined | null): string | null {
   if (value == null) return null;
@@ -81,14 +80,21 @@ export function parseCsvBuffer(buffer: Buffer): ParsedRow[] {
 }
 
 const CHUNK_SIZE = 500;
+// Grouping several chunks into one tx.batch() call turns that many
+// round trips into one. Against a remote Turso database, many small
+// sequential round trips were both slow and fragile — a single transient
+// timeout on any one of them failed the whole import (confirmed by
+// testing against a real Turso database). Batching cuts the round-trip
+// count by this factor.
+const CHUNKS_PER_BATCH = 10;
 
 /** Builds a fresh "staging" generation of the data (records_new /
  * records_new_fts) from a CSV buffer, inside the database the app is
  * already connected to (local file or Turso — same code either way). Does
  * not touch the live `records` table; the caller (atomicSwap.ts) is
  * responsible for swapping the staging tables into place. Ids are assigned
- * explicitly (not via AUTOINCREMENT) so the same id can be inserted into
- * both the main table and the FTS table in lockstep. */
+ * explicitly (not via AUTOINCREMENT) so the same id can be used later to
+ * populate the FTS table by id, not transmitted a second time. */
 export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount: number }> {
   const rows = parseCsvBuffer(csvBuffer);
   const client = await getClient();
@@ -103,37 +109,50 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     `INSERT INTO ${STAGING_TABLE} (id, ${INSERT_COLUMNS.join(", ")}, year_sort) VALUES ${Array(n)
       .fill(`(?, ${INSERT_COLUMNS.map(() => "?").join(", ")}, ?)`)
       .join(", ")}`;
-  const ftsInsertSql = (n: number) =>
-    `INSERT INTO ${STAGING_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")}) VALUES ${Array(n)
-      .fill(`(?, ${FTS_COLUMNS.map(() => "?").join(", ")})`)
-      .join(", ")}`;
 
   const tx = await client.transaction("write");
   try {
-    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-      const chunk = rows.slice(i, i + CHUNK_SIZE);
-      const n = chunk.length;
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE * CHUNKS_PER_BATCH) {
+      const statements: { sql: string; args: (string | number | null)[] }[] = [];
 
-      const args: (string | number | null)[] = [];
-      const ftsArgs: (string | number | null)[] = [];
-      chunk.forEach((r, j) => {
-        const id = i + j + 1;
-        args.push(id, ...r.values, r.yearSort);
-        ftsArgs.push(id, ...FTS_INDEXES.map((idx) => r.values[idx]));
-      });
+      for (
+        let j = i;
+        j < Math.min(i + CHUNK_SIZE * CHUNKS_PER_BATCH, rows.length);
+        j += CHUNK_SIZE
+      ) {
+        const chunk = rows.slice(j, j + CHUNK_SIZE);
+        const n = chunk.length;
 
-      await tx.execute({ sql: insertSql(n), args });
-      await tx.execute({ sql: ftsInsertSql(n), args: ftsArgs });
+        const args: (string | number | null)[] = [];
+        chunk.forEach((r, k) => {
+          const id = j + k + 1;
+          args.push(id, ...r.values, r.yearSort);
+        });
+
+        statements.push({ sql: insertSql(n), args });
+      }
+
+      await tx.batch(statements);
 
       // Local SQLite bindings execute synchronously under the hood despite
       // the Promise-based API — with no true I/O wait, a long chain of
       // awaited calls never yields back to Node's event loop, so incoming
       // requests queue up and the whole site hangs for the entire import
       // (confirmed by testing: ~9s of dead air on every other route while
-      // an import ran). Yielding via setImmediate between chunks forces a
+      // an import ran). Yielding via setImmediate between batches forces a
       // real event-loop tick, so pending requests get serviced promptly.
       await new Promise((resolve) => setImmediate(resolve));
     }
+
+    // Populate the FTS index from the table we just filled, entirely
+    // server-side — no need to transmit title/artist/notes text over the
+    // network a second time. This roughly halves the network payload of a
+    // full import.
+    await tx.execute(
+      `INSERT INTO ${STAGING_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")})
+       SELECT id, ${FTS_COLUMNS.join(", ")} FROM ${STAGING_TABLE}`
+    );
+
     await tx.commit();
   } catch (err) {
     await tx.rollback();

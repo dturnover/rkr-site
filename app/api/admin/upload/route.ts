@@ -3,6 +3,12 @@ import { isAdminAuthenticated } from "@/lib/auth/requireAdmin";
 import { importAndSwap } from "@/lib/import/atomicSwap";
 import { isBodyTooLarge, UPLOAD_BODY_MAX_BYTES } from "@/lib/http/bodySizeGuard";
 
+// Same reasoning as /api/admin/import-from-blob: a full CSV rebuild is a
+// heavy one-off, give it the most headroom Vercel allows (needs Fluid
+// Compute to actually reach 300s on Hobby; otherwise capped at 60s). This
+// route is mainly a local-dev fallback but stays deployable for small files.
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.redirect(new URL("/admin?error=unauthorized", request.url));

@@ -3,6 +3,12 @@ import { del } from "@vercel/blob";
 import { isAdminAuthenticated } from "@/lib/auth/requireAdmin";
 import { importAndSwap } from "@/lib/import/atomicSwap";
 
+// A full CSV rebuild (132k+ rows, generated columns, FTS indexing) is a
+// genuinely heavy one-off operation — give it the most headroom Vercel
+// allows rather than the ~10s default. Requires Fluid Compute to actually
+// grant up to 300s on the Hobby plan; without it this is capped at 60s.
+export const maxDuration = 300;
+
 // Second half of the production upload flow (see BlobUploadForm.tsx /
 // blob-token/route.ts): the browser has already PUT the file directly to
 // Vercel Blob storage, bypassing our function entirely (so the 4.5MB
