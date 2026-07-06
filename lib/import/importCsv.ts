@@ -38,6 +38,31 @@ export const CSV_FIELDS = [
 const INSERT_COLUMNS = CSV_FIELDS.filter((f) => f !== "blank1");
 const FTS_COLUMNS = ["title", "title_credit", "artist", "artist_credit", "notes"] as const;
 
+// _norm columns, computed here in JS and inserted as plain values rather
+// than left as SQL GENERATED/STORED expressions — see the comment on
+// buildDdl in lib/db/ddl.ts for why (Turso's per-row expression evaluation
+// cost was the dominant bottleneck in a full import, confirmed by testing).
+const NORM_COLUMNS = [
+  "artist_norm",
+  "label_norm",
+  "producer_norm",
+  "riddim_norm",
+  "country_norm",
+  "origin_norm",
+  "genre_norm",
+  "format_norm",
+] as const;
+const NORM_SOURCE_FIELDS = [
+  "artist",
+  "label",
+  "producer",
+  "riddim",
+  "country",
+  "song_origin",
+  "genre",
+  "format",
+] as const;
+
 function nullIfBlank(value: string | undefined | null): string | null {
   if (value == null) return null;
   const trimmed = value.trim();
@@ -54,8 +79,9 @@ function deriveYearSort(year: string | null): number | null {
 }
 
 export interface ParsedRow {
-  values: (string | null)[]; // aligned with INSERT_COLUMNS, minus year_sort
+  values: (string | null)[]; // aligned with INSERT_COLUMNS
   yearSort: number | null;
+  norms: (string | null)[]; // aligned with NORM_COLUMNS
 }
 
 export function parseCsvBuffer(buffer: Buffer): ParsedRow[] {
@@ -75,7 +101,11 @@ export function parseCsvBuffer(buffer: Buffer): ParsedRow[] {
       const byField = Object.fromEntries(CSV_FIELDS.map((f, i) => [f, cells[i]]));
       const values = INSERT_COLUMNS.map((f) => byField[f]);
       const yearSort = deriveYearSort(byField.year);
-      return { values, yearSort };
+      const norms = NORM_SOURCE_FIELDS.map((f) => {
+        const v = byField[f];
+        return v ? v.toLowerCase() : null; // already trimmed by nullIfBlank
+      });
+      return { values, yearSort, norms };
     });
 }
 
@@ -105,9 +135,10 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     ${buildDdl(STAGING_TABLE)}
   `);
 
+  const allColumns = [...INSERT_COLUMNS, "year_sort", ...NORM_COLUMNS];
   const insertSql = (n: number) =>
-    `INSERT INTO ${STAGING_TABLE} (id, ${INSERT_COLUMNS.join(", ")}, year_sort) VALUES ${Array(n)
-      .fill(`(?, ${INSERT_COLUMNS.map(() => "?").join(", ")}, ?)`)
+    `INSERT INTO ${STAGING_TABLE} (id, ${allColumns.join(", ")}) VALUES ${Array(n)
+      .fill(`(?, ${allColumns.map(() => "?").join(", ")})`)
       .join(", ")}`;
 
   const tx = await client.transaction("write");
@@ -126,7 +157,7 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
         const args: (string | number | null)[] = [];
         chunk.forEach((r, k) => {
           const id = j + k + 1;
-          args.push(id, ...r.values, r.yearSort);
+          args.push(id, ...r.values, r.yearSort, ...r.norms);
         });
 
         statements.push({ sql: insertSql(n), args });
@@ -146,8 +177,7 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
 
     // Populate the FTS index from the table we just filled, entirely
     // server-side — no need to transmit title/artist/notes text over the
-    // network a second time. This roughly halves the network payload of a
-    // full import.
+    // network a second time.
     await tx.execute(
       `INSERT INTO ${STAGING_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")})
        SELECT id, ${FTS_COLUMNS.join(", ")} FROM ${STAGING_TABLE}`

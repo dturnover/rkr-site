@@ -22,19 +22,35 @@ export async function POST(request: NextRequest) {
   }
 
   const { blobUrl } = (await request.json()) as { blobUrl?: string };
-  if (!blobUrl || !blobUrl.startsWith("https://")) {
+  // Restrict to Vercel's own Blob storage domains before letting the server
+  // fetch() this URL. Without this, an authenticated request (or a stolen
+  // admin session cookie) could make the server fetch an arbitrary internal
+  // or external URL — a classic SSRF-via-server-side-fetch pattern. This
+  // mirrors the same allowlist already used for the CSP connect-src.
+  let parsed: URL | null = null;
+  try {
+    parsed = blobUrl ? new URL(blobUrl) : null;
+  } catch {
+    parsed = null;
+  }
+  const isVercelBlobHost =
+    parsed?.protocol === "https:" &&
+    (parsed.hostname.endsWith(".public.blob.vercel-storage.com") ||
+      parsed.hostname.endsWith(".blob.vercel-storage.com"));
+  if (!isVercelBlobHost || !parsed) {
     return NextResponse.json({ error: "Missing or invalid blobUrl" }, { status: 400 });
   }
+  const safeUrl = parsed.href;
 
   try {
-    const res = await fetch(blobUrl);
+    const res = await fetch(safeUrl);
     if (!res.ok) {
       return NextResponse.json({ error: `Could not fetch uploaded file (${res.status})` }, { status: 502 });
     }
     const buffer = Buffer.from(await res.arrayBuffer());
     const result = await importAndSwap(buffer);
 
-    await del(blobUrl).catch(() => {
+    await del(safeUrl).catch(() => {
       // Not fatal — the file will just sit in Blob storage until manually
       // cleaned up. The import itself already succeeded.
     });

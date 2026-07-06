@@ -28,6 +28,19 @@ import crypto from "node:crypto";
 // on insert to match the main table's `id`, so the `JOIN ... ON r.id =
 // records_fts.rowid` pattern in lib/queries/search.ts still works, and the
 // table survives being renamed indefinitely.
+//
+// The `_norm` columns are plain TEXT, not `GENERATED ALWAYS AS (...)
+// STORED`. They were originally computed columns, but against a real
+// remote Turso database a full import (132k rows) reliably exceeded even a
+// 300-second Vercel function budget, while a comparable bulk operation
+// with no per-row expression to evaluate (the FTS INSERT...SELECT below)
+// took under a minute — strong evidence the per-row `lower(trim(...))`
+// expression evaluation for 8 columns, 132k times, was the actual
+// bottleneck rather than network transfer (confirmed by testing against
+// the live database). Computing the same values in JavaScript during
+// import (lib/import/importCsv.ts) and inserting them as plain values
+// moves that cost off Turso's write path entirely — the values, indexes,
+// and every query against them are identical either way.
 export function buildDdl(tableName: string): string {
   const fts = `${tableName}_fts`;
   const uid = crypto.randomBytes(4).toString("hex");
@@ -59,14 +72,14 @@ CREATE TABLE ${tableName} (
   notes                 TEXT,
   genre                 TEXT,
   additions             TEXT,
-  artist_norm   TEXT GENERATED ALWAYS AS (lower(trim(artist)))      STORED,
-  label_norm    TEXT GENERATED ALWAYS AS (lower(trim(label)))       STORED,
-  producer_norm TEXT GENERATED ALWAYS AS (lower(trim(producer)))    STORED,
-  riddim_norm   TEXT GENERATED ALWAYS AS (lower(trim(riddim)))      STORED,
-  country_norm  TEXT GENERATED ALWAYS AS (lower(trim(country)))     STORED,
-  origin_norm   TEXT GENERATED ALWAYS AS (lower(trim(song_origin))) STORED,
-  genre_norm    TEXT GENERATED ALWAYS AS (lower(trim(genre)))       STORED,
-  format_norm   TEXT GENERATED ALWAYS AS (lower(trim(format)))      STORED
+  artist_norm   TEXT,
+  label_norm    TEXT,
+  producer_norm TEXT,
+  riddim_norm   TEXT,
+  country_norm  TEXT,
+  origin_norm   TEXT,
+  genre_norm    TEXT,
+  format_norm   TEXT
 );
 
 CREATE INDEX ${idx("artist_norm")}   ON ${tableName}(artist_norm);
