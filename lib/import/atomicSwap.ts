@@ -2,10 +2,13 @@ import { getClient } from "@/lib/db/client";
 import {
   LIVE_TABLE,
   LIVE_FTS_TABLE,
+  LIVE_CATALOG_FTS_TABLE,
   STAGING_TABLE,
   STAGING_FTS_TABLE,
+  STAGING_CATALOG_FTS_TABLE,
   PREVIOUS_TABLE,
   PREVIOUS_FTS_TABLE,
+  PREVIOUS_CATALOG_FTS_TABLE,
 } from "@/lib/db/ddl";
 import { buildStagingTables } from "./importCsv";
 
@@ -138,12 +141,18 @@ export async function importAndSwap(csvBuffer: Buffer): Promise<ImportResult> {
 
     const client = await getClient();
     const liveExists = await tableExists(LIVE_TABLE);
+    // Checked independently of liveExists: a `records` table created before
+    // catalog_fts existed has no `records_catalog_fts` sibling to rename
+    // away, which would otherwise fail the transaction on the very first
+    // import after this feature ships.
+    const liveCatalogFtsExists = liveExists && (await tableExists(LIVE_CATALOG_FTS_TABLE));
     const previousRowCount = liveExists ? await countRows(LIVE_TABLE) : null;
 
     const tx = await client.transaction("write");
     try {
       const statements = [
         `DROP TABLE IF EXISTS ${PREVIOUS_FTS_TABLE}`,
+        `DROP TABLE IF EXISTS ${PREVIOUS_CATALOG_FTS_TABLE}`,
         `DROP TABLE IF EXISTS ${PREVIOUS_TABLE}`,
         ...(liveExists
           ? [
@@ -151,8 +160,12 @@ export async function importAndSwap(csvBuffer: Buffer): Promise<ImportResult> {
               `ALTER TABLE ${LIVE_FTS_TABLE} RENAME TO ${PREVIOUS_FTS_TABLE}`,
             ]
           : []),
+        ...(liveCatalogFtsExists
+          ? [`ALTER TABLE ${LIVE_CATALOG_FTS_TABLE} RENAME TO ${PREVIOUS_CATALOG_FTS_TABLE}`]
+          : []),
         `ALTER TABLE ${STAGING_TABLE} RENAME TO ${LIVE_TABLE}`,
         `ALTER TABLE ${STAGING_FTS_TABLE} RENAME TO ${LIVE_FTS_TABLE}`,
+        `ALTER TABLE ${STAGING_CATALOG_FTS_TABLE} RENAME TO ${LIVE_CATALOG_FTS_TABLE}`,
       ];
       await tx.batch(statements);
       await tx.commit();
@@ -181,16 +194,31 @@ export async function restorePrevious(): Promise<void> {
       throw new Error("No previous database version to restore.");
     }
 
+    // Independent existence checks: a generation created before catalog_fts
+    // existed has no `*_catalog_fts` sibling to rename — same transitional
+    // case as importAndSwap above.
+    const liveCatalogFtsExists = await tableExists(LIVE_CATALOG_FTS_TABLE);
+    const previousCatalogFtsExists = await tableExists(PREVIOUS_CATALOG_FTS_TABLE);
+
     const client = await getClient();
     const tx = await client.transaction("write");
     try {
       await tx.batch([
         `ALTER TABLE ${LIVE_TABLE} RENAME TO records_swap_tmp`,
         `ALTER TABLE ${LIVE_FTS_TABLE} RENAME TO records_swap_tmp_fts`,
+        ...(liveCatalogFtsExists
+          ? [`ALTER TABLE ${LIVE_CATALOG_FTS_TABLE} RENAME TO records_swap_tmp_catalog_fts`]
+          : []),
         `ALTER TABLE ${PREVIOUS_TABLE} RENAME TO ${LIVE_TABLE}`,
         `ALTER TABLE ${PREVIOUS_FTS_TABLE} RENAME TO ${LIVE_FTS_TABLE}`,
+        ...(previousCatalogFtsExists
+          ? [`ALTER TABLE ${PREVIOUS_CATALOG_FTS_TABLE} RENAME TO ${LIVE_CATALOG_FTS_TABLE}`]
+          : []),
         `ALTER TABLE records_swap_tmp RENAME TO ${PREVIOUS_TABLE}`,
         `ALTER TABLE records_swap_tmp_fts RENAME TO ${PREVIOUS_FTS_TABLE}`,
+        ...(liveCatalogFtsExists
+          ? [`ALTER TABLE records_swap_tmp_catalog_fts RENAME TO ${PREVIOUS_CATALOG_FTS_TABLE}`]
+          : []),
       ]);
       await tx.commit();
     } catch (err) {

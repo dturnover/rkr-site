@@ -18,31 +18,32 @@ function buildFtsQuery(q: string): string | null {
   return tokens.map((t) => `"${t}"*`).join(" ");
 }
 
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (m) => `\\${m}`);
+// FTS5 string-literal quoting: wrap a term in double quotes, doubling any
+// internal double quotes. Needed because MATCH strings are themselves a
+// small query language — an unquoted term containing an apostrophe or
+// reserved word (e.g. "AND", "NOT") would otherwise throw a syntax error or
+// be misinterpreted, rather than being searched for literally (confirmed by
+// testing). Safe for the trigram tokenizer too: a quoted phrase is matched
+// as a literal run of trigrams, which is exactly the substring-match
+// behavior LIKE '%term%' used to provide.
+function ftsQuoteTerm(term: string): string {
+  return `"${term.replace(/"/g, '""')}"`;
 }
 
-// The simple search box matches title/artist/notes text (via FTS) *and*
-// matrix/label catalog numbers (via LIKE) — collectors search by catalog
-// number as often as by title (e.g. "search 1022, get 42 hits"), and FTS5's
-// tokenizer doesn't reliably do substring matches inside codes like
-// "WIPX1022".
-//
-// The catalog LIKE is a leading-wildcard substring match, which can never
-// use a B-tree index — SQLite/Turso has to scan every row. Measured against
-// the live 132k-row Turso database: a single-column substring scan costs
-// ~5-10s, and (critically) `OR`-ing two such scans together costs ~10x that
-// (~60s+) rather than ~2x — the query planner handles it very poorly. Two
-// mitigations, both required to keep this affordable:
-//  1. Only run the catalog scan at all when the query contains a digit —
-//     real matrix/label numbers always do, and plain artist/title searches
-//     (the common case) skip it entirely, paying zero extra cost.
-//  2. When it does run, use UNION of two single-column scans instead of
-//     OR — empirically ~6x faster for the same result on this database.
-// FTS-sourced rows keep their bm25 relevance rank and are SQL-paginated
-// (cheap regardless of match count, since it's index-backed); catalog
-// matches are a small, fully-materialized JS list appended after all FTS
-// pages are exhausted.
+// The simple search box matches title/artist/notes text (via the existing
+// word-tokenized records_fts) *and* matrix/label catalog numbers (via
+// records_catalog_fts, a trigram-tokenized index over the raw code columns
+// — see lib/db/ddl.ts) — collectors search by catalog number as often as by
+// title (e.g. "search 1022, get 42 hits"), and records_fts's tokenizer
+// doesn't reliably do substring matches inside codes like "WIPX1022".
+// Both are proper indexes, so both are cheap regardless of query content;
+// unlike an earlier version of this function, there's no need to skip the
+// catalog lookup for non-digit queries. One known gap: the trigram
+// tokenizer can't match terms under 3 characters (see MIN_TRIGRAM_LENGTH
+// below), so a 1-2 character keyword search won't surface catalog-number
+// matches — accepted here since real matrix/label numbers are essentially
+// never that short; advancedSearch has an exact-match fallback for the one
+// field where short terms are actually common (2-letter country codes).
 export async function keywordSearch(
   q: string,
   opts: { sort?: string; dir?: string; page?: number }
@@ -60,19 +61,20 @@ export async function keywordSearch(
     .join(", ");
 
   const ftsQuery = buildFtsQuery(q);
-  const hasDigit = /\d/.test(trimmed);
-  const likePattern = `%${escapeLike(trimmed)}%`;
+  const quotedTerm = ftsQuoteTerm(trimmed.toLowerCase());
+  const catalogQuery = `matrix_number:${quotedTerm} OR label_number:${quotedTerm}`;
 
   let catalogIds: number[] = [];
-  if (hasDigit) {
+  try {
     const catalogRes = await client.execute({
-      sql: `SELECT id FROM records WHERE matrix_number LIKE ? ESCAPE '\\'
-            UNION
-            SELECT id FROM records WHERE label_number LIKE ? ESCAPE '\\'
-            LIMIT 2000`,
-      args: [likePattern, likePattern],
+      sql: `SELECT rowid AS id FROM records_catalog_fts WHERE records_catalog_fts MATCH ?`,
+      args: [catalogQuery],
     });
     catalogIds = (catalogRes.rows as unknown as { id: number }[]).map((r) => Number(r.id));
+  } catch {
+    // Trigram tokenizer can't form any trigram from a 1-2 character term —
+    // no match, not an error, but guard anyway for genuinely malformed input.
+    catalogIds = [];
   }
 
   let ftsTotal = 0;
@@ -176,10 +178,34 @@ export interface AdvancedSearchFields {
   notes?: string;
 }
 
-const NORM_LIKE_FIELDS: Record<
-  keyof AdvancedSearchFields,
-  { column: string; norm: boolean } | undefined
-> = {
+// Maps each advanced-search field to its column in records_catalog_fts
+// (lib/db/ddl.ts) — every field here used to be a `column LIKE '%value%'`
+// full-table scan, measured at 40-100+ seconds per query on the live
+// database (no B-tree index can serve a leading-wildcard substring match).
+// records_catalog_fts is trigram-tokenized, so the same substring semantics
+// are now served from an actual index.
+const CATALOG_FIELD_COLUMN: Record<keyof AdvancedSearchFields, string> = {
+  artist: "artist",
+  title: "title",
+  label: "label",
+  labelNumber: "label_number",
+  matrixNumber: "matrix_number",
+  producer: "producer",
+  country: "country",
+  format: "format",
+  year: "year",
+  genre: "genre",
+  riddim: "riddim",
+  origin: "origin",
+  notes: "notes",
+};
+
+// Fallback for terms shorter than a trigram (below): the equivalent lookup
+// against `records` directly, using each field's existing indexed _norm
+// column where one exists (exact match, not substring — but a "substring"
+// search on 1-2 characters is nearly meaningless anyway, and this is both
+// correct and fast, unlike the LIKE scan it replaces).
+const EXACT_FIELD_COLUMN: Record<keyof AdvancedSearchFields, { column: string; norm: boolean }> = {
   artist: { column: "artist_norm", norm: true },
   title: { column: "title", norm: false },
   label: { column: "label_norm", norm: true },
@@ -195,6 +221,14 @@ const NORM_LIKE_FIELDS: Record<
   notes: { column: "notes", norm: false },
 };
 
+// The trigram tokenizer can't form a single trigram from fewer than 3
+// characters, so a MATCH query for a shorter term silently returns zero
+// rows — not an error, just wrong (confirmed by testing: country="ja"
+// matched nothing, despite ~70k JA records existing). This isn't an edge
+// case here specifically: two-letter country codes (JA, UK, US) are the
+// standard format for that field.
+const MIN_TRIGRAM_LENGTH = 3;
+
 export function hasAnyField(fields: AdvancedSearchFields): boolean {
   return Object.values(fields).some((v) => v && v.trim() !== "");
 }
@@ -207,35 +241,82 @@ export async function advancedSearch(
   const page = opts.page ?? 1;
   const { clause } = buildOrderClause(opts.sort, opts.dir);
 
-  const wheres: string[] = [];
-  const args: (string | number)[] = [];
+  const matchParts: string[] = [];
+  const exactWheres: string[] = [];
+  const exactArgs: string[] = [];
 
-  for (const [key, def] of Object.entries(NORM_LIKE_FIELDS) as [
+  for (const [key, column] of Object.entries(CATALOG_FIELD_COLUMN) as [
     keyof AdvancedSearchFields,
-    { column: string; norm: boolean }
+    string
   ][]) {
     const raw = fields[key];
     if (!raw || raw.trim() === "") continue;
     const value = raw.trim();
-    wheres.push(`${def.column} LIKE ? ESCAPE '\\'`);
-    const escaped = value.replace(/[\\%_]/g, (m) => `\\${m}`);
-    args.push(`%${def.norm ? escaped.toLowerCase() : escaped}%`);
+    if (value.length < MIN_TRIGRAM_LENGTH) {
+      const exact = EXACT_FIELD_COLUMN[key];
+      exactWheres.push(`r.${exact.column} = ?`);
+      exactArgs.push(exact.norm ? value.toLowerCase() : value);
+    } else {
+      matchParts.push(`${column}:${ftsQuoteTerm(value.toLowerCase())}`);
+    }
   }
 
-  if (wheres.length === 0) return { rows: [], total: 0 };
+  if (matchParts.length === 0 && exactWheres.length === 0) return { rows: [], total: 0 };
 
-  const whereClause = wheres.join(" AND ");
+  const cols = RESULT_COLUMNS.trim()
+    .split(",")
+    .map((c) => `r.${c.trim()}`)
+    .join(", ");
 
-  const totalRes = await client.execute({
-    sql: `SELECT COUNT(*) AS c FROM records WHERE ${whereClause}`,
-    args,
-  });
-  const total = Number(totalRes.rows[0]?.c ?? 0);
+  try {
+    if (matchParts.length === 0) {
+      // Every field was a short-term exact match — no FTS table involved.
+      const whereClause = exactWheres.join(" AND ");
+      const totalRes = await client.execute({
+        sql: `SELECT COUNT(*) AS c FROM records r WHERE ${whereClause}`,
+        args: exactArgs,
+      });
+      const total = Number(totalRes.rows[0]?.c ?? 0);
+      if (total === 0) return { rows: [], total: 0 };
 
-  const rowsRes = await client.execute({
-    sql: `SELECT ${RESULT_COLUMNS} FROM records WHERE ${whereClause} ${clause} LIMIT ? OFFSET ?`,
-    args: [...args, PAGE_SIZE, (page - 1) * PAGE_SIZE],
-  });
+      const rowsRes = await client.execute({
+        sql: `SELECT ${cols} FROM records r WHERE ${whereClause} ${clause} LIMIT ? OFFSET ?`,
+        args: [...exactArgs, PAGE_SIZE, (page - 1) * PAGE_SIZE],
+      });
+      return { rows: rowsRes.rows as unknown as RecordListRow[], total };
+    }
 
-  return { rows: rowsRes.rows as unknown as RecordListRow[], total };
+    const matchQuery = matchParts.join(" AND ");
+    const extraWhere = exactWheres.length > 0 ? ` AND ${exactWheres.join(" AND ")}` : "";
+
+    // CROSS JOIN, not a plain JOIN: with an extra exact-match condition on
+    // `r` (e.g. country="ja"), SQLite's planner chose to drive the query
+    // from r's country_norm index — probing the FTS virtual table once per
+    // *country* match (up to ~70k probes) instead of once per *FTS* match
+    // (as few as a few thousand) — 8+ seconds instead of single-digit
+    // milliseconds for the exact same result (confirmed by testing). CROSS
+    // JOIN is SQLite's documented way to pin the join order to what's
+    // written, forcing the small, index-backed FTS match to drive.
+    const totalRes = await client.execute({
+      sql: `SELECT COUNT(*) AS c FROM records_catalog_fts f
+            CROSS JOIN records r ON r.id = f.rowid
+            WHERE f.records_catalog_fts MATCH ?${extraWhere}`,
+      args: [matchQuery, ...exactArgs],
+    });
+    const total = Number(totalRes.rows[0]?.c ?? 0);
+    if (total === 0) return { rows: [], total: 0 };
+
+    const rowsRes = await client.execute({
+      sql: `SELECT ${cols} FROM records_catalog_fts f
+            CROSS JOIN records r ON r.id = f.rowid
+            WHERE f.records_catalog_fts MATCH ?${extraWhere}
+            ${clause}
+            LIMIT ? OFFSET ?`,
+      args: [matchQuery, ...exactArgs, PAGE_SIZE, (page - 1) * PAGE_SIZE],
+    });
+
+    return { rows: rowsRes.rows as unknown as RecordListRow[], total };
+  } catch {
+    return { rows: [], total: 0 };
+  }
 }

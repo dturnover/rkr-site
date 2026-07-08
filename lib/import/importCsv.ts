@@ -1,7 +1,13 @@
 import iconv from "iconv-lite";
 import { parse } from "csv-parse/sync";
 import { getClient } from "@/lib/db/client";
-import { buildDdl, STAGING_TABLE, STAGING_FTS_TABLE } from "@/lib/db/ddl";
+import {
+  buildDdl,
+  CATALOG_FTS_COLUMNS,
+  STAGING_TABLE,
+  STAGING_FTS_TABLE,
+  STAGING_CATALOG_FTS_TABLE,
+} from "@/lib/db/ddl";
 
 // Exact column order of the RKR.csv export. `blank1` is a genuinely empty
 // spacer column in the source file and is intentionally dropped; every other
@@ -37,6 +43,27 @@ export const CSV_FIELDS = [
 
 const INSERT_COLUMNS = CSV_FIELDS.filter((f) => f !== "blank1");
 const FTS_COLUMNS = ["title", "title_credit", "artist", "artist_credit", "notes"] as const;
+
+// Source expression for each CATALOG_FTS_COLUMNS entry, evaluated against
+// the staging table in the INSERT...SELECT below. _norm columns are reused
+// as-is (already lowercased in JS during parsing); raw columns are
+// lower()'d in SQL so the whole catalog_fts table is uniformly lowercase —
+// see the comment on CATALOG_FTS_COLUMNS in lib/db/ddl.ts.
+const CATALOG_FTS_SOURCE_EXPR: Record<(typeof CATALOG_FTS_COLUMNS)[number], string> = {
+  artist: "artist_norm",
+  title: "lower(title)",
+  label: "label_norm",
+  label_number: "lower(label_number)",
+  matrix_number: "lower(matrix_number)",
+  producer: "producer_norm",
+  country: "country_norm",
+  format: "format_norm",
+  year: "lower(year)",
+  genre: "genre_norm",
+  riddim: "riddim_norm",
+  origin: "origin_norm",
+  notes: "lower(notes)",
+};
 
 // _norm columns, computed here in JS and inserted as plain values rather
 // than left as SQL GENERATED/STORED expressions — see the comment on
@@ -131,6 +158,7 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
 
   await client.executeMultiple(`
     DROP TABLE IF EXISTS ${STAGING_FTS_TABLE};
+    DROP TABLE IF EXISTS ${STAGING_CATALOG_FTS_TABLE};
     DROP TABLE IF EXISTS ${STAGING_TABLE};
     ${buildDdl(STAGING_TABLE)}
   `);
@@ -181,6 +209,12 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     await tx.execute(
       `INSERT INTO ${STAGING_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")})
        SELECT id, ${FTS_COLUMNS.join(", ")} FROM ${STAGING_TABLE}`
+    );
+
+    const catalogFtsSourceExprs = CATALOG_FTS_COLUMNS.map((c) => CATALOG_FTS_SOURCE_EXPR[c]);
+    await tx.execute(
+      `INSERT INTO ${STAGING_CATALOG_FTS_TABLE} (rowid, ${CATALOG_FTS_COLUMNS.join(", ")})
+       SELECT id, ${catalogFtsSourceExprs.join(", ")} FROM ${STAGING_TABLE}`
     );
 
     await tx.commit();

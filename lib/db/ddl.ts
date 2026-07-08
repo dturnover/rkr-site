@@ -41,8 +41,28 @@ import crypto from "node:crypto";
 // import (lib/import/importCsv.ts) and inserting them as plain values
 // moves that cost off Turso's write path entirely — the values, indexes,
 // and every query against them are identical either way.
+// Columns available to advancedSearch()'s per-field lookup (lib/queries/search.ts).
+// All substring search — no leading-anchor requirement, matching the old
+// LIKE '%value%' semantics exactly, but backed by an index this time.
+export const CATALOG_FTS_COLUMNS = [
+  "artist",
+  "title",
+  "label",
+  "label_number",
+  "matrix_number",
+  "producer",
+  "country",
+  "format",
+  "year",
+  "genre",
+  "riddim",
+  "origin",
+  "notes",
+] as const;
+
 export function buildDdl(tableName: string): string {
   const fts = `${tableName}_fts`;
+  const catalogFts = `${tableName}_catalog_fts`;
   const uid = crypto.randomBytes(4).toString("hex");
   const idx = (name: string) => `idx_${tableName}_${name}_${uid}`;
   return `
@@ -95,12 +115,29 @@ CREATE INDEX ${idx("matrix_number")} ON ${tableName}(matrix_number);
 CREATE INDEX ${idx("label_number")}  ON ${tableName}(label_number);
 
 CREATE VIRTUAL TABLE ${fts} USING fts5(title, title_credit, artist, artist_credit, notes);
+
+-- Advanced Search's per-field lookups used to be a plain 'LIKE %value%' on
+-- each column, which can never use a B-tree index (leading wildcard) and
+-- forces a full table scan — measured at 40-100+ seconds per query on the
+-- live 132k-row Turso database (confirmed by testing). The trigram
+-- tokenizer indexes every 3-character substring of each column, so a MATCH
+-- query can find "marley" inside "bob marley" (or "1022" inside
+-- "WIPX1022-A") via the index instead of scanning every row. Standalone
+-- (no content= link) for the same reason as ${fts} above: renaming it
+-- (as the swap does) would otherwise leave a dangling internal reference.
+-- All columns are inserted lowercased (either already-lowercase _norm
+-- values or lower()'d raw text) so matching is case-insensitive without
+-- depending on the tokenizer's own case-folding defaults.
+CREATE VIRTUAL TABLE ${catalogFts} USING fts5(${CATALOG_FTS_COLUMNS.join(", ")}, tokenize='trigram');
 `;
 }
 
 export const LIVE_TABLE = "records";
 export const LIVE_FTS_TABLE = "records_fts";
+export const LIVE_CATALOG_FTS_TABLE = "records_catalog_fts";
 export const STAGING_TABLE = "records_new";
 export const STAGING_FTS_TABLE = "records_new_fts";
+export const STAGING_CATALOG_FTS_TABLE = "records_new_catalog_fts";
 export const PREVIOUS_TABLE = "records_previous";
 export const PREVIOUS_FTS_TABLE = "records_previous_fts";
+export const PREVIOUS_CATALOG_FTS_TABLE = "records_previous_catalog_fts";
