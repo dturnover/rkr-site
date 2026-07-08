@@ -3,6 +3,8 @@ import FacetBrowseIndex from "@/components/FacetBrowseIndex";
 import { FACETS, isFacetSlug } from "@/lib/facetConfig";
 import { getFacetIndex } from "@/lib/queries/browse";
 
+export const maxDuration = 300;
+
 export default async function FacetIndexPage({
   params,
 }: {

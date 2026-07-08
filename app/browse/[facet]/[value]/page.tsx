@@ -6,6 +6,12 @@ import { getFacetValueRows } from "@/lib/queries/browse";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
+// Default-order page loads are fast (id-ordered, index-satisfied — see
+// lib/queries/shared.ts), but an explicit column-header sort on a large
+// facet value (e.g. a country with 70k+ tracks) forces a full sort that can
+// take tens of seconds on the current Turso database.
+export const maxDuration = 300;
+
 export default async function FacetValuePage({
   params,
   searchParams,

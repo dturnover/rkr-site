@@ -16,12 +16,29 @@ export default function SiteHeader() {
           </p>
 
           <form action="/search" method="GET" className="mt-5 flex justify-center">
-            <div className="flex w-full max-w-md border-2 border-frame bg-paper">
+            <div className="flex w-full max-w-lg border-2 border-frame bg-paper">
+              <select
+                name="field"
+                defaultValue="keyword"
+                aria-label="Search field"
+                className="bg-parchment-deep/70 border-r-2 border-frame px-2 py-2 font-body text-xs sm:text-sm text-ink focus:outline-none"
+              >
+                <option value="keyword">Keyword</option>
+                <option value="artist">Artist</option>
+                <option value="title">Title</option>
+                <option value="country">Country</option>
+                <option value="label">Label</option>
+                <option value="labelNumber">Label No.</option>
+                <option value="matrixNumber">Matrix No.</option>
+                <option value="producer">Producer</option>
+                <option value="riddim">Riddim</option>
+                <option value="origin">Origin</option>
+              </select>
               <input
                 type="text"
                 name="q"
-                placeholder="Search by title or artist&hellip;"
-                className="flex-1 bg-transparent px-3 py-2 font-body text-ink placeholder:text-ink-soft/70 focus:outline-none"
+                placeholder="Search by title, artist, matrix no.&hellip;"
+                className="flex-1 min-w-0 bg-transparent px-3 py-2 font-body text-ink placeholder:text-ink-soft/70 focus:outline-none"
               />
               <button
                 type="submit"

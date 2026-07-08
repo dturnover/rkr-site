@@ -56,7 +56,23 @@ export const RESULT_COLUMNS = `
 `;
 
 export function buildOrderClause(sort: string | undefined, dir: string | undefined) {
-  const sortKey = isSortKey(sort ?? "") ? (sort as SortKey) : "artist";
+  if (!isSortKey(sort ?? "")) {
+    // No explicit sort requested (page load, not a column-header click).
+    // Ordering by id lets the query planner satisfy it directly from
+    // whatever index already services the WHERE clause — no separate sort
+    // step. Defaulting to an unrelated column (e.g. artist_norm) instead
+    // forces a full temp-B-tree sort of the whole filtered set before the
+    // first page can be returned: measured on the live Turso database,
+    // browsing a large facet value (country=JA, 70k+ matching rows) sorted
+    // by artist_norm took ~46s; ordered by id it's ~200ms. Explicit column
+    // sorts (below) still pay that cost, but only when a user asks for it.
+    return {
+      sortKey: "id" as const,
+      direction: "ASC" as const,
+      clause: `ORDER BY id ASC`,
+    };
+  }
+  const sortKey = sort as SortKey;
   const direction = dir === "desc" ? "DESC" : "ASC";
   const column = SORT_COLUMNS[sortKey];
   // NULLs last regardless of direction, so blank fields don't dominate either end.

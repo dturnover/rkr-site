@@ -1,20 +1,29 @@
 import Link from "next/link";
 import type { RecordListRow, SortKey } from "@/lib/queries/shared";
+import { facetLink, type FacetSlug } from "@/lib/facetConfig";
 import Pagination from "./Pagination";
 
-const COLUMNS: { key: SortKey; label: string; field: keyof RecordListRow; mono?: boolean }[] = [
-  { key: "artist", label: "Artist", field: "artist" },
+type CellLink = { type: "record" } | { type: "facet"; slug: FacetSlug };
+
+const COLUMNS: {
+  key: SortKey;
+  label: string;
+  field: keyof RecordListRow;
+  mono?: boolean;
+  link?: CellLink;
+}[] = [
+  { key: "artist", label: "Artist", field: "artist", link: { type: "facet", slug: "artists" } },
   { key: "artist", label: "Artist Credit", field: "artist_credit" },
-  { key: "title", label: "Title", field: "title" },
+  { key: "title", label: "Title", field: "title", link: { type: "record" } },
   { key: "title", label: "Title Credit", field: "title_credit" },
-  { key: "label", label: "Label", field: "label" },
+  { key: "label", label: "Label", field: "label", link: { type: "facet", slug: "labels" } },
   { key: "label_number", label: "Label No.", field: "label_number", mono: true },
   { key: "matrix_number", label: "Matrix No.", field: "matrix_number", mono: true },
-  { key: "country", label: "Country", field: "country" },
-  { key: "year", label: "Year", field: "year" },
-  { key: "format", label: "Format", field: "format" },
-  { key: "riddim", label: "Riddim", field: "riddim" },
-  { key: "producer", label: "Producer", field: "producer" },
+  { key: "country", label: "Country", field: "country", link: { type: "facet", slug: "countries" } },
+  { key: "year", label: "Year", field: "year", link: { type: "facet", slug: "years" } },
+  { key: "format", label: "Format", field: "format", link: { type: "facet", slug: "formats" } },
+  { key: "riddim", label: "Riddim", field: "riddim", link: { type: "facet", slug: "riddims" } },
+  { key: "producer", label: "Producer", field: "producer", link: { type: "facet", slug: "producers" } },
 ];
 
 // Only these get a clickable sort header — the "credit" variants sort by
@@ -104,25 +113,38 @@ export default function ResultsTable({
                   i % 2 === 1 ? "bg-parchment/30" : ""
                 } hover:bg-parchment-deep/40`}
               >
-                {COLUMNS.map((col, ci) => (
-                  <td
-                    key={col.field}
-                    className={`px-3 py-2 align-top whitespace-nowrap ${
-                      col.mono ? "font-catalog text-xs" : "font-body"
-                    }`}
-                  >
-                    {ci === 0 ? (
-                      <Link
-                        href={`/records/${row.id}`}
-                        className="text-link font-semibold hover:text-rasta-red"
-                      >
-                        {row[col.field] ?? ""}
-                      </Link>
-                    ) : (
-                      <span className="text-ink">{row[col.field] ?? ""}</span>
-                    )}
-                  </td>
-                ))}
+                {COLUMNS.map((col) => {
+                  const value = row[col.field];
+                  const href =
+                    value && col.link
+                      ? col.link.type === "record"
+                        ? `/records/${row.id}`
+                        : facetLink(col.link.slug, String(value))
+                      : null;
+                  return (
+                    <td
+                      key={col.field}
+                      className={`px-3 py-2 align-top whitespace-nowrap ${
+                        col.mono ? "font-catalog text-xs" : "font-body"
+                      }`}
+                    >
+                      {href ? (
+                        <Link
+                          href={href}
+                          className={
+                            col.link?.type === "record"
+                              ? "text-link font-semibold hover:text-rasta-red"
+                              : "text-ink hover:text-rasta-red hover:underline"
+                          }
+                        >
+                          {value}
+                        </Link>
+                      ) : (
+                        <span className="text-ink">{value ?? ""}</span>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

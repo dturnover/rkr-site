@@ -4,6 +4,11 @@ import { advancedSearch, hasAnyField, type AdvancedSearchFields } from "@/lib/qu
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
+// Single-field substring LIKE scans (no compound/trigram index available yet)
+// can take up to ~100s on the current Turso database for common fields —
+// well past Vercel's default function duration. See lib/queries/search.ts.
+export const maxDuration = 300;
+
 const FIELD_NAMES: (keyof AdvancedSearchFields)[] = [
   "artist",
   "title",
