@@ -52,7 +52,6 @@ export async function getFacetValueRows(
   const facet = FACETS[slug];
   const client = await getClient();
   const page = opts.page ?? 1;
-  const { clause } = buildOrderClause(opts.sort, opts.dir);
 
   const whereClause =
     value === UNKNOWN_VALUE ? `${facet.column} IS NULL` : `${facet.column} = ?`;
@@ -63,6 +62,7 @@ export async function getFacetValueRows(
     args,
   });
   const total = Number(totalRes.rows[0]?.c ?? 0);
+  const { clause } = buildOrderClause(opts.sort, opts.dir, total);
 
   const rowsRes = await client.execute({
     sql: `SELECT ${RESULT_COLUMNS} FROM records WHERE ${whereClause} ${clause} LIMIT ? OFFSET ?`,

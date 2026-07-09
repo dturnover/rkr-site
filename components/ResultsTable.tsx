@@ -77,6 +77,7 @@ export default function ResultsTable({
 
   return (
     <div>
+      <Pagination page={page} total={total} searchParams={searchParams} position="top" />
       <div className="overflow-x-auto border border-paper-stain">
         <table className="w-full text-sm bg-paper">
           <thead>

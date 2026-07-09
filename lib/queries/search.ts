@@ -1,5 +1,6 @@
 import { getClient } from "@/lib/db/client";
 import {
+  ALPHA_SORT_THRESHOLD,
   PAGE_SIZE,
   RESULT_COLUMNS,
   buildOrderClause,
@@ -36,14 +37,23 @@ function ftsQuoteTerm(term: string): string {
 // — see lib/db/ddl.ts) — collectors search by catalog number as often as by
 // title (e.g. "search 1022, get 42 hits"), and records_fts's tokenizer
 // doesn't reliably do substring matches inside codes like "WIPX1022".
-// Both are proper indexes, so both are cheap regardless of query content;
-// unlike an earlier version of this function, there's no need to skip the
-// catalog lookup for non-digit queries. One known gap: the trigram
-// tokenizer can't match terms under 3 characters (see MIN_TRIGRAM_LENGTH
-// below), so a 1-2 character keyword search won't surface catalog-number
-// matches — accepted here since real matrix/label numbers are essentially
-// never that short; advancedSearch has an exact-match fallback for the one
-// field where short terms are actually common (2-letter country codes).
+//
+// The catalog lookup is index-backed but not uniformly cheap: a multi-word
+// *phrase* match against the trigram index (e.g. "alton ellis", two words)
+// measured at 1.5-3.5s on the live database, versus low hundreds of ms for
+// a single short token like "1022" — the cost scales with how many
+// consecutive trigram positions have to be verified, not just whether an
+// index exists. Real matrix/label numbers are always either a single
+// token ("WIPX1022") or contain a digit ("WIRL BE 1022-2") — a multi-word,
+// all-alphabetic query (an artist or title search, the common case) is
+// never a catalog code, so it skips this check entirely rather than pay a
+// multi-second tax on every plain-text search. One separate known gap: the
+// trigram tokenizer can't match terms under 3 characters (see
+// MIN_TRIGRAM_LENGTH below), so a 1-2 character keyword search won't
+// surface catalog-number matches either — accepted here since real
+// matrix/label numbers are essentially never that short; advancedSearch has
+// an exact-match fallback for the one field where short terms are actually
+// common (2-letter country codes).
 export async function keywordSearch(
   q: string,
   opts: { sort?: string; dir?: string; page?: number }
@@ -53,63 +63,76 @@ export async function keywordSearch(
 
   const client = await getClient();
   const page = opts.page ?? 1;
-  const useCustomSort = !!opts.sort;
-  const { clause } = buildOrderClause(opts.sort, opts.dir);
   const cols = RESULT_COLUMNS.trim()
     .split(",")
     .map((c) => `r.${c.trim()}`)
     .join(", ");
 
   const ftsQuery = buildFtsQuery(q);
-  const quotedTerm = ftsQuoteTerm(trimmed.toLowerCase());
-  const catalogQuery = `matrix_number:${quotedTerm} OR label_number:${quotedTerm}`;
+  const looksLikeCatalogCode = /\d/.test(trimmed) || !/\s/.test(trimmed);
 
   let catalogIds: number[] = [];
-  try {
-    const catalogRes = await client.execute({
-      sql: `SELECT rowid AS id FROM records_catalog_fts WHERE records_catalog_fts MATCH ?`,
-      args: [catalogQuery],
-    });
-    catalogIds = (catalogRes.rows as unknown as { id: number }[]).map((r) => Number(r.id));
-  } catch {
-    // Trigram tokenizer can't form any trigram from a 1-2 character term —
-    // no match, not an error, but guard anyway for genuinely malformed input.
-    catalogIds = [];
+  if (looksLikeCatalogCode) {
+    const quotedTerm = ftsQuoteTerm(trimmed.toLowerCase());
+    const catalogQuery = `matrix_number:${quotedTerm} OR label_number:${quotedTerm}`;
+    try {
+      const catalogRes = await client.execute({
+        sql: `SELECT rowid AS id FROM records_catalog_fts WHERE records_catalog_fts MATCH ?`,
+        args: [catalogQuery],
+      });
+      catalogIds = (catalogRes.rows as unknown as { id: number }[]).map((r) => Number(r.id));
+    } catch {
+      // Trigram tokenizer can't form any trigram from a 1-2 character term —
+      // no match, not an error, but guard anyway for genuinely malformed input.
+      catalogIds = [];
+    }
   }
 
+  // Fetch up to one more than the sort threshold in a single round trip: if
+  // that comes back under the cap, its length *is* the exact total (no
+  // separate COUNT needed — the common case, one query instead of two). If
+  // it hits the cap, the result is too large to sort anyway (see below), so
+  // only then is a real COUNT worth its own round trip.
+  let ftsIds: number[] = [];
   let ftsTotal = 0;
-  try {
-    if (ftsQuery) {
-      const ftsCountRes = await client.execute({
-        sql: `SELECT COUNT(*) AS c FROM records_fts WHERE records_fts MATCH ?`,
-        args: [ftsQuery],
+  if (ftsQuery) {
+    try {
+      const ftsIdsRes = await client.execute({
+        sql: `SELECT rowid AS id FROM records_fts WHERE records_fts MATCH ? LIMIT ?`,
+        args: [ftsQuery, ALPHA_SORT_THRESHOLD + 1],
       });
-      ftsTotal = Number(ftsCountRes.rows[0]?.c ?? 0);
+      ftsIds = (ftsIdsRes.rows as unknown as { id: number }[]).map((r) => Number(r.id));
+      if (ftsIds.length <= ALPHA_SORT_THRESHOLD) {
+        ftsTotal = ftsIds.length;
+      } else {
+        const ftsCountRes = await client.execute({
+          sql: `SELECT COUNT(*) AS c FROM records_fts WHERE records_fts MATCH ?`,
+          args: [ftsQuery],
+        });
+        ftsTotal = Number(ftsCountRes.rows[0]?.c ?? 0);
+        ftsIds = []; // capped/partial — not usable below, and not needed by the fallback path
+      }
+    } catch {
+      // Malformed FTS5 query syntax (rare edge cases in user input) — treat as no FTS matches.
+      ftsTotal = 0;
     }
-  } catch {
-    // Malformed FTS5 query syntax (rare edge cases in user input) — treat as no FTS matches.
-    ftsTotal = 0;
   }
 
   const total = ftsTotal + catalogIds.length;
   if (total === 0) return { rows: [], total: 0 };
 
-  if (useCustomSort) {
-    // Custom column sort spans both sources — re-fetch the combined id set
-    // in the requested SQL order. Both id lists are already small/bounded.
-    const allIds = new Set<number>(catalogIds);
-    if (ftsQuery) {
-      try {
-        const ftsIdsRes = await client.execute({
-          sql: `SELECT rowid AS id FROM records_fts WHERE records_fts MATCH ? LIMIT 2000`,
-          args: [ftsQuery],
-        });
-        for (const r of ftsIdsRes.rows as unknown as { id: number }[]) allIds.add(Number(r.id));
-      } catch {
-        // ignore — already counted above
-      }
-    }
-    const idList = [...allIds];
+  // Small enough to sort properly — either the column the user explicitly
+  // asked for, or (by default) alphabetically by artist, matching how a
+  // physical discography is browsed. This used to always default to raw
+  // relevance order, which — for a search like "Alton Ellis" that matches
+  // hundreds of tracks — visibly showed the first page or so in one order
+  // (bm25 relevance) and later pages suddenly alphabetical once past the
+  // FTS results and into the id-ordered catalog-match tail (confirmed by
+  // testing). Materializing the combined id set and sorting it properly
+  // fixes that; both id lists here are already small/bounded.
+  if (opts.sort || total <= ALPHA_SORT_THRESHOLD) {
+    const { clause } = buildOrderClause(opts.sort, opts.dir, total);
+    const idList = [...new Set<number>([...catalogIds, ...ftsIds])];
     if (idList.length === 0) return { rows: [], total };
     const placeholders = idList.map(() => "?").join(",");
     const rowsRes = await client.execute({
@@ -119,8 +142,11 @@ export async function keywordSearch(
     return { rows: rowsRes.rows as unknown as RecordListRow[], total };
   }
 
-  // Default order: FTS relevance first (SQL-paginated), then catalog
-  // matches appended once FTS pages are exhausted.
+  // Large result, no explicit sort requested (e.g. a very common word):
+  // sorting all of it isn't worth the cost, so fall back to FTS relevance
+  // order, which stays cheap regardless of match count (SQL-paginated,
+  // index-backed), then catalog matches appended once FTS pages are
+  // exhausted.
   const pageStart = (page - 1) * PAGE_SIZE;
   const pageEnd = pageStart + PAGE_SIZE;
   const rows: RecordListRow[] = [];
@@ -239,7 +265,6 @@ export async function advancedSearch(
 ): Promise<{ rows: RecordListRow[]; total: number }> {
   const client = await getClient();
   const page = opts.page ?? 1;
-  const { clause } = buildOrderClause(opts.sort, opts.dir);
 
   const matchParts: string[] = [];
   const exactWheres: string[] = [];
@@ -278,6 +303,7 @@ export async function advancedSearch(
       });
       const total = Number(totalRes.rows[0]?.c ?? 0);
       if (total === 0) return { rows: [], total: 0 };
+      const { clause } = buildOrderClause(opts.sort, opts.dir, total);
 
       const rowsRes = await client.execute({
         sql: `SELECT ${cols} FROM records r WHERE ${whereClause} ${clause} LIMIT ? OFFSET ?`,
@@ -305,6 +331,7 @@ export async function advancedSearch(
     });
     const total = Number(totalRes.rows[0]?.c ?? 0);
     if (total === 0) return { rows: [], total: 0 };
+    const { clause } = buildOrderClause(opts.sort, opts.dir, total);
 
     const rowsRes = await client.execute({
       sql: `SELECT ${cols} FROM records_catalog_fts f

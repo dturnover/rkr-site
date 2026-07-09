@@ -11,10 +11,12 @@ export default function Pagination({
   page,
   total,
   searchParams,
+  position = "bottom",
 }: {
   page: number;
   total: number;
   searchParams: URLSearchParams;
+  position?: "top" | "bottom";
 }) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if (totalPages <= 1) return null;
@@ -28,7 +30,9 @@ export default function Pagination({
   }
 
   return (
-    <nav className="mt-5 flex flex-wrap items-center justify-between gap-3 font-body text-sm text-ink-soft">
+    <nav
+      className={`${position === "top" ? "mb-5" : "mt-5"} flex flex-wrap items-center justify-between gap-3 font-body text-sm text-ink-soft`}
+    >
       <p>
         Showing {start.toLocaleString()}&ndash;{end.toLocaleString()} of{" "}
         {total.toLocaleString()}

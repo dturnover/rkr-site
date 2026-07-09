@@ -55,17 +55,28 @@ export const RESULT_COLUMNS = `
   matrix_number, country, year, format, riddim, producer
 `;
 
-export function buildOrderClause(sort: string | undefined, dir: string | undefined) {
+// A default (unrequested) sort should still feel expected — alphabetical by
+// artist, the way a physical discography is browsed — but sorting forces a
+// full temp-B-tree of the entire filtered result set before the first page
+// can return (confirmed by testing: ~46s for a 70k-row facet value like
+// country=JA). That cost scales with the *result* size, not the table size,
+// so it's cheap for a typical search or browse result (a few thousand rows
+// at most) and only a problem for a handful of very large facet values.
+// Below this threshold, default to alphabetical; at or above it, fall back
+// to id order (already index-satisfied, no sort step needed) to keep those
+// pages fast. Callers that don't know their result count yet (total
+// omitted) get the safe (id) behavior.
+export const ALPHA_SORT_THRESHOLD = 5000;
+
+export function buildOrderClause(sort: string | undefined, dir: string | undefined, total?: number) {
   if (!isSortKey(sort ?? "")) {
-    // No explicit sort requested (page load, not a column-header click).
-    // Ordering by id lets the query planner satisfy it directly from
-    // whatever index already services the WHERE clause — no separate sort
-    // step. Defaulting to an unrelated column (e.g. artist_norm) instead
-    // forces a full temp-B-tree sort of the whole filtered set before the
-    // first page can be returned: measured on the live Turso database,
-    // browsing a large facet value (country=JA, 70k+ matching rows) sorted
-    // by artist_norm took ~46s; ordered by id it's ~200ms. Explicit column
-    // sorts (below) still pay that cost, but only when a user asks for it.
+    if (total !== undefined && total <= ALPHA_SORT_THRESHOLD) {
+      return {
+        sortKey: "artist" as const,
+        direction: "ASC" as const,
+        clause: `ORDER BY (artist_norm IS NULL) ASC, artist_norm ASC`,
+      };
+    }
     return {
       sortKey: "id" as const,
       direction: "ASC" as const,
