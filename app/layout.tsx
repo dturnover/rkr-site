@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Cinzel, EB_Garamond, Courier_Prime } from "next/font/google";
 import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
+import SiteSidebar from "@/components/SiteSidebar";
 import SiteFooter from "@/components/SiteFooter";
 
 const cinzel = Cinzel({
@@ -40,9 +41,10 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <SiteHeader />
-        <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-8">
-          {children}
-        </main>
+        <div className="flex-1 w-full flex flex-col lg:flex-row lg:items-start px-3 sm:px-4 lg:px-6 py-6 gap-4 lg:gap-6">
+          <SiteSidebar />
+          <main className="flex-1 min-w-0 w-full">{children}</main>
+        </div>
         <SiteFooter />
       </body>
     </html>

@@ -23,7 +23,7 @@ export default async function Home() {
   const status = await getDatabaseStatus();
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 max-w-4xl mx-auto">
       <section className="text-center max-w-2xl mx-auto">
         <p className="font-body text-ink leading-relaxed">
           Compiled over decades by Michael Turner &amp; Robert Schoenfeld,{" "}

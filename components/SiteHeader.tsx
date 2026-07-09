@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { FACET_ORDER, FACETS } from "@/lib/facetConfig";
 
 export default function SiteHeader() {
   return (
@@ -49,24 +48,6 @@ export default function SiteHeader() {
             </div>
           </form>
         </div>
-
-        <nav className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 font-body text-sm sm:text-base">
-          {FACET_ORDER.map((slug) => (
-            <Link
-              key={slug}
-              href={`/browse/${slug}`}
-              className="text-ink hover:text-rasta-red underline decoration-paper-stain decoration-2 underline-offset-4"
-            >
-              {FACETS[slug].label}
-            </Link>
-          ))}
-          <Link
-            href="/advanced-search"
-            className="text-ink hover:text-rasta-red underline decoration-paper-stain decoration-2 underline-offset-4"
-          >
-            Advanced Search
-          </Link>
-        </nav>
       </div>
     </header>
   );

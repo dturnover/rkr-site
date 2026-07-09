@@ -50,11 +50,13 @@ export default async function AdvancedSearchPage({
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-ink mb-1 text-center">Advanced Search</h1>
-      <p className="font-body text-ink-soft mb-6 text-center">
-        Combine any of the fields below &mdash; all filled fields must match.
-      </p>
-      <AdvancedSearchForm values={formValues} />
+      <div className="max-w-3xl mx-auto">
+        <h1 className="font-display text-3xl text-ink mb-1 text-center">Advanced Search</h1>
+        <p className="font-body text-ink-soft mb-6 text-center">
+          Combine any of the fields below &mdash; all filled fields must match.
+        </p>
+        <AdvancedSearchForm values={formValues} />
+      </div>
 
       {hasQuery && (
         <div className="mt-8">

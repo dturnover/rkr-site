@@ -14,7 +14,7 @@ export default function SiteFooter() {
           alt="Roots Knotty Roots"
           width={492}
           height={235}
-          className="w-24 h-auto border border-paper-stain shadow-sm"
+          className="w-28 h-auto"
         />
       </div>
     </footer>
