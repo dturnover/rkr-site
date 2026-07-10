@@ -29,6 +29,15 @@ export default function Pagination({
     pageNumbers.push(p);
   }
 
+  // First/Last jump straight to page 1 / totalPages — without them, reaching
+  // page 1,416 of a large facet (e.g. Country -> JA) means clicking Next
+  // over a thousand times, since the numbered links only ever show the
+  // handful of pages nearest the current one.
+  const showFirst = pageNumbers[0] > 1;
+  const showFirstGap = pageNumbers[0] > 2;
+  const showLast = pageNumbers[pageNumbers.length - 1] < totalPages;
+  const showLastGap = pageNumbers[pageNumbers.length - 1] < totalPages - 1;
+
   return (
     <nav
       className={`${position === "top" ? "mb-5" : "mt-5"} flex flex-wrap items-center justify-between gap-3 font-body text-sm text-ink-soft`}
@@ -46,6 +55,17 @@ export default function Pagination({
             &laquo; Prev
           </Link>
         )}
+        {showFirst && (
+          <>
+            <Link
+              href={withParam(searchParams, "page", "1")}
+              className="px-2 py-1 border border-paper-stain hover:bg-paper text-ink"
+            >
+              1
+            </Link>
+            {showFirstGap && <span className="px-1">&hellip;</span>}
+          </>
+        )}
         {pageNumbers.map((p) => (
           <Link
             key={p}
@@ -59,6 +79,17 @@ export default function Pagination({
             {p}
           </Link>
         ))}
+        {showLast && (
+          <>
+            {showLastGap && <span className="px-1">&hellip;</span>}
+            <Link
+              href={withParam(searchParams, "page", String(totalPages))}
+              className="px-2 py-1 border border-paper-stain hover:bg-paper text-ink"
+            >
+              {totalPages.toLocaleString()}
+            </Link>
+          </>
+        )}
         {page < totalPages && (
           <Link
             href={withParam(searchParams, "page", String(page + 1))}
