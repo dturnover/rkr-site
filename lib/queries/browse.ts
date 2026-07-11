@@ -23,16 +23,19 @@ export function isValidLetter(value: string | undefined | null): value is string
   return !!value && (value === HASH_LETTER || /^[a-z]$/.test(value));
 }
 
-/** Lists one letter's worth of an alphabetical facet index, or the whole
- * index for numeric facets (years — a few hundred values at most).
+/** Lists one letter's worth of an alphabetical facet index, the whole index
+ * for numeric facets (years — a few hundred values at most), or the whole
+ * index for alpha facets flagged `singlePage` (country, format, genre — a
+ * naturally small, bounded taxonomy; see FacetDef in lib/facetConfig.ts).
  *
- * Alpha facets are letter-scoped for a reason worth keeping: listing ALL
- * distinct values meant a GROUP BY over every row plus a ~19k-item HTML
- * page for artists — measured at 18.4s on the live Turso database before a
- * visitor saw anything. One letter is an index range-scan (`>= 'b' AND
- * < 'c'` — deliberately not `LIKE 'b%'`, which SQLite refuses to serve
- * from a standard index and turns into a full scan, confirmed by testing:
- * 52s vs 276ms for the same rows).
+ * Large alpha facets (artist, label, producer, riddim, origin) are
+ * letter-scoped for a reason worth keeping: listing ALL distinct values
+ * meant a GROUP BY over every row plus a ~19k-item HTML page for artists —
+ * measured at up to 18s on the live Turso database before a visitor saw
+ * anything. One letter is an index range-scan (`>= 'b' AND < 'c'` —
+ * deliberately not `LIKE 'b%'`, which SQLite refuses to serve from a
+ * standard index and turns into a full scan, confirmed by testing: 52s vs
+ * 276ms for the same rows).
  */
 export async function getFacetIndex(
   slug: FacetSlug,
@@ -40,10 +43,11 @@ export async function getFacetIndex(
 ): Promise<FacetIndexEntry[]> {
   const facet = FACETS[slug];
   const client = await getClient();
+  const wantsEverything = facet.sortMode === "numeric" || facet.singlePage;
 
   let where: string;
   let args: string[] = [];
-  if (facet.sortMode === "numeric") {
+  if (wantsEverything) {
     where = `${facet.column} IS NOT NULL`;
   } else if (letter === HASH_LETTER) {
     // Everything outside a-z. '{' is the character immediately after 'z',
@@ -71,8 +75,9 @@ export async function getFacetIndex(
   }));
 
   // Records with no value at all ("Unknown") live in the "#" bucket for
-  // alpha facets, and are always appended for numeric ones.
-  if (facet.sortMode === "numeric" || letter === HASH_LETTER) {
+  // letter-paginated facets, and are always appended when everything's
+  // already being listed on one page.
+  if (wantsEverything || letter === HASH_LETTER) {
     const unknownCount = await client.execute(
       `SELECT COUNT(*) AS count FROM records WHERE ${facet.column} IS NULL`
     );

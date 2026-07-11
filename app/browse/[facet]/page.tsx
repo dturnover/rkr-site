@@ -18,16 +18,18 @@ export default async function FacetIndexPage({
 
   const facet = FACETS[facetParam];
   const sp = await searchParams;
+  const paginated = facet.sortMode === "alpha" && !facet.singlePage;
   const rawLetter = first(sp.letter)?.toLowerCase();
-  const letter =
-    facet.sortMode === "alpha" ? (isValidLetter(rawLetter) ? rawLetter : "a") : undefined;
+  const letter = paginated ? (isValidLetter(rawLetter) ? rawLetter : "a") : undefined;
 
   const entries = await getFacetIndex(facetParam, letter);
 
-  const countText =
-    facet.sortMode === "alpha"
-      ? `${entries.length.toLocaleString()} ${facet.singular.toLowerCase()}${entries.length === 1 ? "" : "s"} under “${letter!.toUpperCase()}”`
-      : `${entries.length.toLocaleString()} distinct ${facet.singular.toLowerCase()}${entries.length === 1 ? "" : "s"}`;
+  // facet.label is already correctly pluralized ("Countries", not
+  // "Countrys") — use it instead of naively appending "s" to the singular.
+  const noun = entries.length === 1 ? facet.singular.toLowerCase() : facet.label.toLowerCase();
+  const countText = paginated
+    ? `${entries.length.toLocaleString()} ${noun} under “${letter!.toUpperCase()}”`
+    : `${entries.length.toLocaleString()} distinct ${noun}`;
 
   return (
     <div>

@@ -18,6 +18,14 @@ export interface FacetDef {
   /** Column used to display a representative, human-cased value. */
   displayColumn: "artist" | "country" | "year" | "format" | "label" | "producer" | "riddim" | "genre" | "song_origin";
   sortMode: "alpha" | "numeric";
+  /** Alpha facets that are naturally small, bounded categories (country,
+   * format, genre — a fixed real-world taxonomy) rather than per-work free
+   * text (artist, label, producer, riddim, origin — grows with the
+   * catalogue). Small ones list every value on one page; the rest are
+   * letter-paginated (see getFacetIndex in lib/queries/browse.ts) since
+   * listing thousands of values in one page was measured to be slow to
+   * query and heavy to render. */
+  singlePage?: boolean;
 }
 
 export const FACETS: Record<FacetSlug, FacetDef> = {
@@ -36,6 +44,7 @@ export const FACETS: Record<FacetSlug, FacetDef> = {
     column: "country_norm",
     displayColumn: "country",
     sortMode: "alpha",
+    singlePage: true,
   },
   years: {
     slug: "years",
@@ -52,6 +61,7 @@ export const FACETS: Record<FacetSlug, FacetDef> = {
     column: "format_norm",
     displayColumn: "format",
     sortMode: "alpha",
+    singlePage: true,
   },
   labels: {
     slug: "labels",
@@ -84,6 +94,7 @@ export const FACETS: Record<FacetSlug, FacetDef> = {
     column: "genre_norm",
     displayColumn: "genre",
     sortMode: "alpha",
+    singlePage: true,
   },
   origins: {
     slug: "origins",
