@@ -15,17 +15,54 @@ export interface FacetIndexEntry {
 
 const UNKNOWN_VALUE = "__unknown__";
 
-export async function getFacetIndex(slug: FacetSlug): Promise<FacetIndexEntry[]> {
+/** The "#" bucket on alpha facet indexes: every value that doesn't start
+ * with a-z (digits, punctuation), plus the Unknown (NULL) entry. */
+export const HASH_LETTER = "#";
+
+export function isValidLetter(value: string | undefined | null): value is string {
+  return !!value && (value === HASH_LETTER || /^[a-z]$/.test(value));
+}
+
+/** Lists one letter's worth of an alphabetical facet index, or the whole
+ * index for numeric facets (years — a few hundred values at most).
+ *
+ * Alpha facets are letter-scoped for a reason worth keeping: listing ALL
+ * distinct values meant a GROUP BY over every row plus a ~19k-item HTML
+ * page for artists — measured at 18.4s on the live Turso database before a
+ * visitor saw anything. One letter is an index range-scan (`>= 'b' AND
+ * < 'c'` — deliberately not `LIKE 'b%'`, which SQLite refuses to serve
+ * from a standard index and turns into a full scan, confirmed by testing:
+ * 52s vs 276ms for the same rows).
+ */
+export async function getFacetIndex(
+  slug: FacetSlug,
+  letter?: string
+): Promise<FacetIndexEntry[]> {
   const facet = FACETS[slug];
   const client = await getClient();
 
-  const known = await client.execute(
-    `SELECT ${facet.column} AS value, ${facet.displayColumn} AS label, COUNT(*) AS count
-     FROM records
-     WHERE ${facet.column} IS NOT NULL
-     GROUP BY ${facet.column}
-     ORDER BY ${facet.sortMode === "numeric" ? "value" : "value COLLATE NOCASE"} ASC`
-  );
+  let where: string;
+  let args: string[] = [];
+  if (facet.sortMode === "numeric") {
+    where = `${facet.column} IS NOT NULL`;
+  } else if (letter === HASH_LETTER) {
+    // Everything outside a-z. '{' is the character immediately after 'z',
+    // so `>= '{'` catches values starting past the alphabet.
+    where = `${facet.column} IS NOT NULL AND (${facet.column} < 'a' OR ${facet.column} >= '{')`;
+  } else {
+    const l = isValidLetter(letter) ? letter : "a";
+    where = `${facet.column} >= ? AND ${facet.column} < ?`;
+    args = [l, String.fromCharCode(l.charCodeAt(0) + 1)];
+  }
+
+  const known = await client.execute({
+    sql: `SELECT ${facet.column} AS value, ${facet.displayColumn} AS label, COUNT(*) AS count
+          FROM records
+          WHERE ${where}
+          GROUP BY ${facet.column}
+          ORDER BY ${facet.sortMode === "numeric" ? "value" : "value COLLATE NOCASE"} ASC`,
+    args,
+  });
 
   const entries: FacetIndexEntry[] = known.rows.map((r) => ({
     value: String(r.value),
@@ -33,12 +70,16 @@ export async function getFacetIndex(slug: FacetSlug): Promise<FacetIndexEntry[]>
     count: Number(r.count),
   }));
 
-  const unknownCount = await client.execute(
-    `SELECT COUNT(*) AS count FROM records WHERE ${facet.column} IS NULL`
-  );
-  const uc = Number(unknownCount.rows[0]?.count ?? 0);
-  if (uc > 0) {
-    entries.push({ value: UNKNOWN_VALUE, label: "Unknown", count: uc });
+  // Records with no value at all ("Unknown") live in the "#" bucket for
+  // alpha facets, and are always appended for numeric ones.
+  if (facet.sortMode === "numeric" || letter === HASH_LETTER) {
+    const unknownCount = await client.execute(
+      `SELECT COUNT(*) AS count FROM records WHERE ${facet.column} IS NULL`
+    );
+    const uc = Number(unknownCount.rows[0]?.count ?? 0);
+    if (uc > 0) {
+      entries.push({ value: UNKNOWN_VALUE, label: "Unknown", count: uc });
+    }
   }
 
   return entries;
