@@ -51,3 +51,17 @@ export function hasBSide(r: RecordDetail): boolean {
     r.b_side_label_number
   );
 }
+
+// True when the only thing known about the B-side is its title (e.g. a dub
+// "Version" that shares the A-side's artist/label/matrix info and so has
+// nothing else recorded separately) — legitimate, but rendered with the
+// same full field-list card as a fully-populated B-side, it reads as if the
+// page stopped loading partway through rather than as expected sparse data.
+export function bSideHasOnlyTitle(r: RecordDetail): boolean {
+  return !!(r.b_side_title || r.b_side_title_credit) && !(
+    r.b_side_artist ||
+    r.b_side_artist_credit ||
+    r.b_side_matrix_number ||
+    r.b_side_label_number
+  );
+}

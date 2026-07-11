@@ -72,8 +72,15 @@ a {
   color: var(--link-blue-muted);
 }
 
+/* Color is the site's only at-rest signal that a data field (Artist,
+   Label, Producer, etc.) is clickable — a UAT pass flagged that a
+   colorblind visitor, or anyone using a monochrome printout/e-reader, has
+   no way to tell a linked field from adjacent plain text (e.g. "Artist"
+   next to "Artist Credit") without it. An underline on hover is a cheap,
+   universally-understood second signal that doesn't disturb the aesthetic. */
 a:hover {
   color: var(--rasta-red);
+  text-decoration: underline;
 }
 
 table {

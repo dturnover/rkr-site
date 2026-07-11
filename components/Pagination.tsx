@@ -21,11 +21,22 @@ export default function Pagination({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if (totalPages <= 1) return null;
 
-  const start = (page - 1) * PAGE_SIZE + 1;
-  const end = Math.min(total, page * PAGE_SIZE);
+  // `page` can be arbitrarily out of range (a stale bookmark, or someone
+  // hand-editing ?page=), and the fallback for "no records on this page"
+  // (ResultsTable) now keeps Pagination visible specifically so there's a
+  // way back — clamping is what makes that possible. Without it, e.g.
+  // page=9999 against 1,416 real pages made the nearby-range loop below run
+  // backwards (page-2=9997 > totalPages=1416) and produce an empty range,
+  // silently dropping every link including Prev/First/Last (confirmed by
+  // testing). Clamping shows the bar as if you'd landed on the nearest
+  // valid page instead.
+  const effectivePage = Math.min(Math.max(1, page), totalPages);
+
+  const start = (effectivePage - 1) * PAGE_SIZE + 1;
+  const end = Math.min(total, effectivePage * PAGE_SIZE);
 
   const pageNumbers: number[] = [];
-  for (let p = Math.max(1, page - 2); p <= Math.min(totalPages, page + 2); p++) {
+  for (let p = Math.max(1, effectivePage - 2); p <= Math.min(totalPages, effectivePage + 2); p++) {
     pageNumbers.push(p);
   }
 
@@ -47,9 +58,9 @@ export default function Pagination({
         {total.toLocaleString()}
       </p>
       <div className="flex items-center gap-1">
-        {page > 1 && (
+        {effectivePage > 1 && (
           <Link
-            href={withParam(searchParams, "page", String(page - 1))}
+            href={withParam(searchParams, "page", String(effectivePage - 1))}
             className="px-2 py-1 border border-paper-stain hover:bg-paper"
           >
             &laquo; Prev
@@ -71,7 +82,7 @@ export default function Pagination({
             key={p}
             href={withParam(searchParams, "page", String(p))}
             className={`px-2 py-1 border ${
-              p === page
+              p === effectivePage
                 ? "bg-frame text-paper border-frame"
                 : "border-paper-stain hover:bg-paper text-ink"
             }`}
@@ -90,9 +101,9 @@ export default function Pagination({
             </Link>
           </>
         )}
-        {page < totalPages && (
+        {effectivePage < totalPages && (
           <Link
-            href={withParam(searchParams, "page", String(page + 1))}
+            href={withParam(searchParams, "page", String(effectivePage + 1))}
             className="px-2 py-1 border border-paper-stain hover:bg-paper"
           >
             Next &raquo;

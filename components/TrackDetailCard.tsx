@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { RecordDetail } from "@/lib/queries/records";
-import { hasBSide } from "@/lib/queries/records";
+import { hasBSide, bSideHasOnlyTitle } from "@/lib/queries/records";
 import { facetLink, type FacetSlug } from "@/lib/facetConfig";
+import { isUncertainValue } from "@/lib/dataQuality";
 
 function Field({
   label,
@@ -17,7 +18,8 @@ function Field({
   wrap?: boolean;
 }) {
   if (!value) return null;
-  const href = facet ? facetLink(facet, value) : null;
+  const uncertain = isUncertainValue(value);
+  const href = !uncertain && facet ? facetLink(facet, value) : null;
   return (
     <div
       className={`flex ${wrap ? "flex-col" : "flex-col sm:flex-row sm:gap-3"} py-1.5 border-b border-paper-stain/50 last:border-b-0`}
@@ -26,9 +28,15 @@ function Field({
         {label}
       </dt>
       <dd
-        className={`font-body text-ink whitespace-pre-line break-words ${mono ? "font-catalog text-sm" : ""}`}
+        className={`font-body whitespace-pre-line break-words ${mono ? "font-catalog text-sm" : ""} ${
+          uncertain ? "italic text-ink-soft" : "text-ink"
+        }`}
       >
-        {href ? (
+        {uncertain ? (
+          <span title="The compiler flagged this entry as uncertain — not a confirmed value.">
+            {value} (uncertain)
+          </span>
+        ) : href ? (
           <Link href={href} className="hover:text-rasta-red hover:underline">
             {value}
           </Link>
@@ -40,8 +48,17 @@ function Field({
   );
 }
 
+// The source data stores Version as a raw lowercase "yes"/etc., unlike every
+// other field which is already proper-cased ("Ska", "JA") — rendered as-is
+// it reads like an unformatted database dump leaking through.
+function capitalizeFirst(value: string | null): string | null {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 export default function TrackDetailCard({ record }: { record: RecordDetail }) {
   const showBSide = hasBSide(record);
+  const bSideOnlyTitle = showBSide && bSideHasOnlyTitle(record);
 
   return (
     <div className="space-y-6">
@@ -65,14 +82,29 @@ export default function TrackDetailCard({ record }: { record: RecordDetail }) {
           <Field label="Producer" value={record.producer} facet="producers" />
           <Field label="Riddim" value={record.riddim} facet="riddims" />
           <Field label="Genre" value={record.genre} facet="genres" />
-          <Field label="Version" value={record.version} />
+          <Field label="Version" value={capitalizeFirst(record.version)} />
           <Field label="Song Origin" value={record.song_origin} facet="origins" />
           <Field label="Additions" value={record.additions} />
           <Field label="Notes" value={record.notes} wrap />
         </dl>
       </section>
 
-      {showBSide && (
+      {showBSide && bSideOnlyTitle && (
+        // Compact single-line treatment: nothing separate is known about
+        // this B-side beyond its title (e.g. a dub "Version" sharing the
+        // A-side's artist/label/matrix info) — the full field-list card
+        // used below would render as a mostly-empty bordered box right next
+        // to a densely-filled A-side card, which reads as broken/loading
+        // rather than as expected sparse data.
+        <p className="font-body text-ink-soft px-1">
+          <span className="text-rasta-green font-semibold">B-Side:</span>{" "}
+          {record.b_side_title || "Untitled"}
+          {record.b_side_title_credit ? ` (${record.b_side_title_credit})` : ""}
+          {" — same artist/label/matrix details as the A-side."}
+        </p>
+      )}
+
+      {showBSide && !bSideOnlyTitle && (
         <section className="frame-double bg-paper p-5 sm:p-7">
           <h2 className="font-display text-xl text-rasta-green mb-1">B-Side</h2>
           <h3 className="font-body text-2xl text-ink mb-4">

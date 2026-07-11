@@ -44,6 +44,15 @@ export default async function AdvancedSearchPage({
   }
 
   const hasQuery = hasAnyField(fields);
+  // A GET form submits every named field in the query string, even ones
+  // left blank — so "no params at all" (a fresh page load) and "submitted
+  // with every field empty" both need distinguishing from hasQuery to know
+  // which message (if any) to show. Previously a blank submit silently
+  // reloaded the empty form with no feedback at all — confirmed by testing
+  // — leaving no indication of whether the click even registered, unlike
+  // the header keyword search, which already prompts "Enter a search term
+  // above" for the equivalent case.
+  const wasSubmitted = FIELD_NAMES.some((name) => sp[name] !== undefined);
   const { rows, total } = hasQuery
     ? await advancedSearch(fields, { sort, dir, page })
     : { rows: [], total: 0 };
@@ -58,6 +67,12 @@ export default async function AdvancedSearchPage({
         <AdvancedSearchForm values={formValues} />
       </div>
 
+      {!hasQuery && wasSubmitted && (
+        <p className="font-body text-ink-soft mt-8 text-center italic">
+          Enter at least one field above to search.
+        </p>
+      )}
+
       {hasQuery && (
         <div className="mt-8">
           <p className="font-body text-ink-soft mb-3">
@@ -71,6 +86,7 @@ export default async function AdvancedSearchPage({
             dir={dir}
             searchParams={toURLSearchParams(sp)}
             emptyMessage="No tracks matched those filters."
+            resultsHref={`/advanced-search?${toURLSearchParams(sp).toString()}`}
           />
         </div>
       )}

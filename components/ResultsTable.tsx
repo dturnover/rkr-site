@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { RecordListRow, SortKey } from "@/lib/queries/shared";
 import { facetLink, type FacetSlug } from "@/lib/facetConfig";
+import { isUncertainValue } from "@/lib/dataQuality";
 import Pagination from "./Pagination";
 
 type CellLink = { type: "record" } | { type: "facet"; slug: FacetSlug };
@@ -59,6 +60,7 @@ export default function ResultsTable({
   dir,
   searchParams,
   emptyMessage,
+  resultsHref,
 }: {
   rows: RecordListRow[];
   total: number;
@@ -67,12 +69,31 @@ export default function ResultsTable({
   dir: string;
   searchParams: URLSearchParams;
   emptyMessage?: string;
+  /** This results page's own URL (path + query), so record links can carry
+   * a `back` param — without it, paging through dozens of matching records
+   * meant relying entirely on the browser Back button, which loses your
+   * exact scroll position and doesn't work at all if the record was opened
+   * in a new tab (confirmed as a real friction point by UAT testing). */
+  resultsHref?: string;
 }) {
   if (rows.length === 0) {
+    // total > 0 here means there ARE matching records — the requested page
+    // number is just past the end (e.g. a stale bookmark, or someone
+    // editing ?page= by hand). Previously this returned early with no
+    // pagination controls at all, a dead end with no way back except
+    // manually re-editing the URL (confirmed by testing: ?page=9999 on a
+    // 1,416-page result set rendered "No records found" with nothing
+    // clickable). Keeping Pagination visible lets them navigate to a page
+    // that actually has results.
     return (
-      <p className="font-body italic text-ink-soft py-8 text-center">
-        {emptyMessage ?? "No records found."}
-      </p>
+      <div>
+        <p className="font-body italic text-ink-soft py-8 text-center">
+          {total > 0
+            ? `No records on this page — try an earlier page.`
+            : (emptyMessage ?? "No records found.")}
+        </p>
+        {total > 0 && <Pagination page={page} total={total} searchParams={searchParams} />}
+      </div>
     );
   }
 
@@ -80,7 +101,16 @@ export default function ResultsTable({
     <div>
       <Pagination page={page} total={total} searchParams={searchParams} position="top" />
       <div className="overflow-x-auto border border-paper-stain">
-        <table className="w-full table-fixed text-sm bg-paper">
+        {/* min-w so the 12 percentage-based columns never get crushed below
+            a readable width — on any screen wide enough to satisfy it
+            (desktop/tablet), it's a no-op and cells just wrap normally with
+            no scrollbar; on narrow phones, the table locks to this width
+            and this wrapper's overflow-x-auto does real horizontal
+            scrolling instead of squeezing every column to ~20-40px and
+            wrapping text one character per line (confirmed by testing: a
+            375px-wide viewport produced 38px-wide cells and 217px-tall
+            rows before this fix). */}
+        <table className="w-full min-w-[900px] table-fixed text-sm bg-paper">
           <colgroup>
             {COLUMNS.map((col) => (
               <col key={col.field} style={{ width: col.width }} />
@@ -122,10 +152,11 @@ export default function ResultsTable({
               >
                 {COLUMNS.map((col) => {
                   const value = row[col.field];
+                  const uncertain = typeof value === "string" && isUncertainValue(value);
                   const href =
-                    value && col.link
+                    value && col.link && !uncertain
                       ? col.link.type === "record"
-                        ? `/records/${row.id}`
+                        ? `/records/${row.id}${resultsHref ? `?back=${encodeURIComponent(resultsHref)}` : ""}`
                         : facetLink(col.link.slug, String(value))
                       : null;
                   return (
@@ -135,7 +166,14 @@ export default function ResultsTable({
                         col.mono ? "font-catalog text-xs" : "font-body"
                       }`}
                     >
-                      {href ? (
+                      {uncertain ? (
+                        <span
+                          className="italic text-ink-soft"
+                          title="The compiler flagged this entry as uncertain — not a confirmed value."
+                        >
+                          {value}
+                        </span>
+                      ) : href ? (
                         <Link
                           href={href}
                           className={

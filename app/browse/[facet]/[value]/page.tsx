@@ -49,6 +49,7 @@ export default async function FacetValuePage({
         sort={sort}
         dir={dir}
         searchParams={toURLSearchParams(sp)}
+        resultsHref={`/browse/${facet.slug}/${valueParam}?${toURLSearchParams(sp).toString()}`}
       />
     </div>
   );

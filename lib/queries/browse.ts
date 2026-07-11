@@ -1,5 +1,6 @@
 import { getClient } from "@/lib/db/client";
 import { FACETS, type FacetSlug } from "@/lib/facetConfig";
+import { isUncertainValue } from "@/lib/dataQuality";
 import {
   PAGE_SIZE,
   RESULT_COLUMNS,
@@ -68,11 +69,17 @@ export async function getFacetIndex(
     args,
   });
 
-  const entries: FacetIndexEntry[] = known.rows.map((r) => ({
-    value: String(r.value),
-    label: String(r.label ?? r.value),
-    count: Number(r.count),
-  }));
+  const entries: FacetIndexEntry[] = known.rows
+    .map((r) => ({
+      value: String(r.value),
+      label: String(r.label ?? r.value),
+      count: Number(r.count),
+    }))
+    // A curator's editorial flag ("dubious entry") occasionally sits in a
+    // field instead of a real value (see lib/dataQuality.ts) — fine to
+    // browse to on the one record it actually belongs to, but it isn't a
+    // real category and shouldn't clutter this index as its own bucket.
+    .filter((e) => !isUncertainValue(e.value));
 
   // Records with no value at all ("Unknown") live in the "#" bucket for
   // letter-paginated facets, and are always appended when everything's

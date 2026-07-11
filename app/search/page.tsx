@@ -70,6 +70,7 @@ export default async function SearchPage({
           dir={dir}
           searchParams={toURLSearchParams(sp)}
           emptyMessage={`No tracks matched "${q}".`}
+          resultsHref={`/search?${toURLSearchParams(sp).toString()}`}
         />
       )}
     </div>
