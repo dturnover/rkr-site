@@ -15,15 +15,15 @@ const COLUMNS: {
   width: string;
 }[] = [
   { key: "artist", label: "Artist", field: "artist", link: { type: "facet", slug: "artists" }, width: "11%" },
-  { key: "artist", label: "Artist Credit", field: "artist_credit", width: "10%" },
+  { key: "artist", label: "Artist Credit", field: "artist_credit", width: "7%" },
   { key: "title", label: "Title", field: "title", link: { type: "record" }, width: "12%" },
-  { key: "title", label: "Title Credit", field: "title_credit", width: "10%" },
+  { key: "title", label: "Title Credit", field: "title_credit", width: "7%" },
   { key: "label", label: "Label", field: "label", link: { type: "facet", slug: "labels" }, width: "9%" },
   { key: "label_number", label: "Label No.", field: "label_number", mono: true, width: "7%" },
   { key: "matrix_number", label: "Matrix No.", field: "matrix_number", mono: true, width: "8%" },
-  { key: "country", label: "Country", field: "country", link: { type: "facet", slug: "countries" }, width: "5%" },
-  { key: "year", label: "Year", field: "year", link: { type: "facet", slug: "years" }, width: "5%" },
-  { key: "format", label: "Format", field: "format", link: { type: "facet", slug: "formats" }, width: "5%" },
+  { key: "country", label: "Country", field: "country", link: { type: "facet", slug: "countries" }, width: "7%" },
+  { key: "year", label: "Year", field: "year", link: { type: "facet", slug: "years" }, width: "7%" },
+  { key: "format", label: "Format", field: "format", link: { type: "facet", slug: "formats" }, width: "7%" },
   { key: "riddim", label: "Riddim", field: "riddim", link: { type: "facet", slug: "riddims" }, width: "9%" },
   { key: "producer", label: "Producer", field: "producer", link: { type: "facet", slug: "producers" }, width: "9%" },
 ];
