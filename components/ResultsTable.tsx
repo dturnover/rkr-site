@@ -124,7 +124,7 @@ export default function ResultsTable({
                 return (
                   <th
                     key={col.field}
-                    className="text-left font-body font-semibold px-3 py-2"
+                    className="text-left font-body font-semibold px-3 py-2 break-words"
                   >
                     {isSortable ? (
                       <Link
@@ -132,7 +132,17 @@ export default function ResultsTable({
                         className="text-ink hover:text-rasta-red"
                       >
                         {col.label}
-                        {isActive ? (dir === "asc" ? " ↑" : " ↓") : ""}
+                        {/* A dim, always-visible ⇅ on every sortable header,
+                            not just the active one, so it reads as "click to
+                            sort" at a glance — previously only the currently
+                            active column showed any arrow at all, and these
+                            links had no other visual distinction from a
+                            plain (non-sortable) header label. */}
+                        {isActive ? (
+                          <span className="text-rasta-red"> {dir === "asc" ? "↑" : "↓"}</span>
+                        ) : (
+                          <span className="text-paper-stain"> ⇅</span>
+                        )}
                       </Link>
                     ) : (
                       <span className="text-ink">{col.label}</span>
