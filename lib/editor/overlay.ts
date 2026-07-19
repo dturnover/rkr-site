@@ -314,6 +314,37 @@ export async function getRecordLog(recordKey: string, limit = 50): Promise<LogEn
   return res.rows as unknown as LogEntry[];
 }
 
+/** Reads the whole overlay for the import merge (Phase 3): every field
+ * override and every editor-added record. Both sets are editor-generated and
+ * modest in size, so loading them into memory to merge against the parsed CSV
+ * is fine. Ensures the tables exist first, so a first-ever import on a fresh
+ * database just gets two empty lists and behaves exactly as before. */
+export async function getOverlayForMerge(): Promise<{
+  fieldEdits: { record_key: string; field: string; value: string | null }[];
+  editorRecords: { record_key: string; data: Record<string, string | null> }[];
+}> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  const fe = await client.execute(`SELECT record_key, field, value FROM editor_field_edits`);
+  const er = await client.execute(`SELECT record_key, data FROM editor_records`);
+  return {
+    fieldEdits: fe.rows.map((r) => ({
+      record_key: String(r.record_key),
+      field: String(r.field),
+      value: r.value == null ? null : String(r.value),
+    })),
+    editorRecords: er.rows.map((r) => {
+      let data: Record<string, string | null> = {};
+      try {
+        data = JSON.parse(String(r.data));
+      } catch {
+        data = {};
+      }
+      return { record_key: String(r.record_key), data };
+    }),
+  };
+}
+
 export interface GlobalLogEntry extends LogEntry {
   record_id: number | null;
 }

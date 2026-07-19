@@ -8,6 +8,7 @@ import {
   STAGING_FTS_TABLE,
   STAGING_CATALOG_FTS_TABLE,
 } from "@/lib/db/ddl";
+import { computeRecordKey, EDITABLE_FIELDS, getOverlayForMerge } from "@/lib/editor/overlay";
 
 // Exact column order of the RKR.csv export. `blank1` is a genuinely empty
 // spacer column in the source file and is intentionally dropped; every other
@@ -105,13 +106,13 @@ function deriveYearSort(year: string | null): number | null {
   return n;
 }
 
-export interface ParsedRow {
-  values: (string | null)[]; // aligned with INSERT_COLUMNS
-  yearSort: number | null;
-  norms: (string | null)[]; // aligned with NORM_COLUMNS
-}
+// A parsed row as a field→value map (keyed by CSV_FIELDS names). Kept in this
+// shape rather than pre-flattened to positional tuples so the overlay merge
+// (mergeOverlay below) can read and fill individual fields by name before the
+// row is turned into insert values.
+export type FieldRow = Record<string, string | null>;
 
-export function parseCsvBuffer(buffer: Buffer): ParsedRow[] {
+export function parseCsvBuffer(buffer: Buffer): FieldRow[] {
   const text = iconv.decode(buffer, "win1252");
   const rows: string[][] = parse(text, {
     columns: false,
@@ -124,16 +125,73 @@ export function parseCsvBuffer(buffer: Buffer): ParsedRow[] {
   return rows
     .filter((row) => row.some((cell) => cell && cell.trim() !== "")) // drop fully blank lines
     .map((row) => {
-      const cells = CSV_FIELDS.map((_, i) => nullIfBlank(row[i]));
-      const byField = Object.fromEntries(CSV_FIELDS.map((f, i) => [f, cells[i]]));
-      const values = INSERT_COLUMNS.map((f) => byField[f]);
-      const yearSort = deriveYearSort(byField.year);
-      const norms = NORM_SOURCE_FIELDS.map((f) => {
-        const v = byField[f];
-        return v ? v.toLowerCase() : null; // already trimmed by nullIfBlank
+      const byField: FieldRow = {};
+      CSV_FIELDS.forEach((f, i) => {
+        byField[f] = nullIfBlank(row[i]);
       });
-      return { values, yearSort, norms };
+      return byField;
     });
+}
+
+function insertPartsFor(byField: FieldRow): {
+  values: (string | null)[];
+  yearSort: number | null;
+  norms: (string | null)[];
+} {
+  return {
+    values: INSERT_COLUMNS.map((f) => byField[f] ?? null),
+    yearSort: deriveYearSort(byField.year ?? null),
+    norms: NORM_SOURCE_FIELDS.map((f) => {
+      const v = byField[f];
+      return v ? v.toLowerCase() : null;
+    }),
+  };
+}
+
+// Re-applies the editor overlay onto the freshly-parsed CSV rows (Phase 3),
+// in memory, before anything is inserted — so the search index is built once
+// from the final merged data and the live records table needs no extra column.
+//
+// The conflict rule (per the site owner): dad's uploaded file wins for
+// anything it actually contains; an editor's value only lands where dad's
+// field is blank. Editor-added records that aren't in dad's file at all are
+// appended; if dad's new file now contains a record with the same identity,
+// dad's version wins and the editor copy is dropped (it's been "adopted").
+//
+// Records are matched by computeRecordKey (matrix number, else label no +
+// artist + title) — see lib/editor/overlay.ts.
+async function mergeOverlay(rows: FieldRow[]): Promise<FieldRow[]> {
+  const { fieldEdits, editorRecords } = await getOverlayForMerge();
+  if (fieldEdits.length === 0 && editorRecords.length === 0) return rows;
+
+  const byKey = new Map<string, FieldRow[]>();
+  for (const row of rows) {
+    const key = computeRecordKey(row);
+    const list = byKey.get(key);
+    if (list) list.push(row);
+    else byKey.set(key, [row]);
+  }
+
+  const editable = new Set<string>(EDITABLE_FIELDS);
+  for (const e of fieldEdits) {
+    if (e.value == null || !editable.has(e.field)) continue;
+    const targets = byKey.get(e.record_key);
+    if (!targets) continue; // dad's file has no such record; nothing to attach to
+    for (const row of targets) {
+      // Fill only where dad's field is blank — his non-empty value wins.
+      if (nullIfBlank(row[e.field]) == null) row[e.field] = e.value;
+    }
+  }
+
+  for (const er of editorRecords) {
+    if (byKey.has(er.record_key)) continue; // dad's file now has it — his version wins
+    const row: FieldRow = {};
+    for (const f of CSV_FIELDS) row[f] = null;
+    for (const f of EDITABLE_FIELDS) row[f] = nullIfBlank(er.data[f] ?? null);
+    rows.push(row);
+  }
+
+  return rows;
 }
 
 const CHUNK_SIZE = 500;
@@ -153,7 +211,10 @@ const CHUNKS_PER_BATCH = 10;
  * explicitly (not via AUTOINCREMENT) so the same id can be used later to
  * populate the FTS table by id, not transmitted a second time. */
 export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount: number }> {
-  const rows = parseCsvBuffer(csvBuffer);
+  // Parse dad's file, then re-apply the editor overlay on top (fills blanks,
+  // appends editor-added records) — see mergeOverlay. On a database with no
+  // editor activity this is a no-op and the import is unchanged.
+  const rows = await mergeOverlay(parseCsvBuffer(csvBuffer));
   const client = await getClient();
 
   await client.executeMultiple(`
@@ -183,9 +244,10 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
         const n = chunk.length;
 
         const args: (string | number | null)[] = [];
-        chunk.forEach((r, k) => {
+        chunk.forEach((byField, k) => {
           const id = j + k + 1;
-          args.push(id, ...r.values, r.yearSort, ...r.norms);
+          const { values, yearSort, norms } = insertPartsFor(byField);
+          args.push(id, ...values, yearSort, ...norms);
         });
 
         statements.push({ sql: insertSql(n), args });
