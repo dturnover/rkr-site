@@ -10,8 +10,24 @@ const ABOUT_LINKS: { href: string; label: string }[] = [
   { href: "/interviews", label: "Interviews & Features" },
 ];
 
-export default function SiteSidebar() {
+export default function SiteSidebar({
+  isEditor = false,
+  isAdmin = false,
+}: {
+  isEditor?: boolean;
+  isAdmin?: boolean;
+}) {
   const pathname = usePathname();
+
+  // Editor tools only appear for a signed-in editor/admin. New Track and the
+  // Modification Log are for everyone with edit access; Admin is admin-only.
+  const editorLinks: { href: string; label: string }[] = isEditor
+    ? [
+        { href: "/records/new", label: "New Track" },
+        { href: "/mod-log", label: "Modification Log" },
+        { href: "/admin", label: isAdmin ? "Admin" : "Account" },
+      ]
+    : [];
 
   return (
     <nav
@@ -62,6 +78,23 @@ export default function SiteSidebar() {
               aria-current={pathname === link.href ? "page" : undefined}
               className={`block underline decoration-paper-stain decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 hover:text-rasta-red ${
                 pathname === link.href ? "text-rasta-red font-semibold" : "text-ink"
+              }`}
+            >
+              {link.label}
+            </Link>
+          </li>
+        ))}
+
+        {editorLinks.map((link, i) => (
+          <li
+            key={link.href}
+            className={i === 0 ? "lg:mt-2 lg:pt-2 lg:border-t lg:border-paper-stain" : undefined}
+          >
+            <Link
+              href={link.href}
+              aria-current={pathname === link.href ? "page" : undefined}
+              className={`block underline decoration-rasta-green decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 hover:text-rasta-red ${
+                pathname === link.href ? "text-rasta-red font-semibold" : "text-rasta-green"
               }`}
             >
               {link.label}

@@ -4,6 +4,7 @@ import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteSidebar from "@/components/SiteSidebar";
 import SiteFooter from "@/components/SiteFooter";
+import { getSession } from "@/lib/auth/requireAdmin";
 
 const cinzel = Cinzel({
   variable: "--font-cinzel",
@@ -29,11 +30,13 @@ export const metadata: Metadata = {
     "A free, searchable discography of Jamaican music — ska, rocksteady, reggae, dancehall and more. Compiled by Michael Turner & Robert Schoenfeld.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getSession();
+
   return (
     <html
       lang="en"
@@ -42,7 +45,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <SiteHeader />
         <div className="flex-1 w-full flex flex-col lg:flex-row lg:items-start px-3 sm:px-4 lg:px-6 py-6 gap-4 lg:gap-6">
-          <SiteSidebar />
+          <SiteSidebar isEditor={!!session} isAdmin={session?.role === "admin"} />
           <main className="flex-1 min-w-0 w-full">{children}</main>
         </div>
         <SiteFooter />
