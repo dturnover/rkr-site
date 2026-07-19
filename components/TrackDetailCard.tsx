@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { RecordDetail } from "@/lib/queries/records";
-import { hasBSide, bSideHasOnlyTitle } from "@/lib/queries/records";
+import { hasBSide } from "@/lib/queries/records";
 import { facetLink, type FacetSlug } from "@/lib/facetConfig";
 import { isUncertainValue } from "@/lib/dataQuality";
 
@@ -58,7 +58,6 @@ function capitalizeFirst(value: string | null): string | null {
 
 export default function TrackDetailCard({ record }: { record: RecordDetail }) {
   const showBSide = hasBSide(record);
-  const bSideOnlyTitle = showBSide && bSideHasOnlyTitle(record);
 
   return (
     <div className="space-y-6">
@@ -82,29 +81,14 @@ export default function TrackDetailCard({ record }: { record: RecordDetail }) {
           <Field label="Producer" value={record.producer} facet="producers" />
           <Field label="Riddim" value={record.riddim} facet="riddims" />
           <Field label="Genre" value={record.genre} facet="genres" />
-          <Field label="Version" value={capitalizeFirst(record.version)} />
+          <Field label="Version Side?" value={capitalizeFirst(record.version)} />
           <Field label="Song Origin" value={record.song_origin} facet="origins" />
           <Field label="Additions" value={record.additions} />
           <Field label="Notes" value={record.notes} wrap />
         </dl>
       </section>
 
-      {showBSide && bSideOnlyTitle && (
-        // Compact single-line treatment: nothing separate is known about
-        // this B-side beyond its title (e.g. a dub "Version" sharing the
-        // A-side's artist/label/matrix info) — the full field-list card
-        // used below would render as a mostly-empty bordered box right next
-        // to a densely-filled A-side card, which reads as broken/loading
-        // rather than as expected sparse data.
-        <p className="font-body text-ink-soft px-1">
-          <span className="text-rasta-green font-semibold">B-Side:</span>{" "}
-          {record.b_side_title || "Untitled"}
-          {record.b_side_title_credit ? ` (${record.b_side_title_credit})` : ""}
-          {" — same artist/label/matrix details as the A-side."}
-        </p>
-      )}
-
-      {showBSide && !bSideOnlyTitle && (
+      {showBSide && (
         <section className="frame-double bg-paper p-5 sm:p-7">
           <h2 className="font-display text-xl text-rasta-green mb-1">B-Side</h2>
           <h3 className="font-body text-2xl text-ink mb-4">
