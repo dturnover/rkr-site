@@ -1,4 +1,5 @@
 import { getClient } from "@/lib/db/client";
+import { CATALOG_FTS_COLUMNS } from "@/lib/db/ddl";
 import {
   ALPHA_SORT_THRESHOLD,
   PAGE_SIZE,
@@ -7,16 +8,32 @@ import {
   type RecordListRow,
 } from "./shared";
 
+// Builds a single adjacent-phrase FTS5 query (quoted as one unit, prefix
+// wildcard on the trailing word only) rather than splitting the input into
+// separate per-word prefix terms ANDed together. The latter was the
+// original approach here, and it's wrong for anything but a single-word
+// search: FTS5 ANDs space-separated terms by default WITHOUT requiring
+// adjacency, so a two-word query like "will power" became `"will"*
+// "power"*` — matching any row containing a word starting with "will"
+// *and*, anywhere else, a word starting with "power". Confirmed by testing
+// against the live database: that query matched "Power and Will" (reversed
+// order), "His Power" (the "will" match was "Williams", the artist's
+// surname — a false hit from the prefix wildcard on a 4-letter fragment),
+// and four other unrelated titles — a real, reported bug, not a hypothetical
+// one. Quoting the whole query as one phrase requires the words adjacent
+// and in order, exactly like a plain-text search engine's phrase behavior,
+// and is what a hyphenated query ("will-power") was already accidentally
+// doing correctly, since a hyphen contains no whitespace to split on.
 function buildFtsQuery(q: string): string | null {
-  const tokens = q
+  const cleaned = q
     .trim()
+    .replace(/["*]/g, "")
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 12)
-    .map((t) => t.replace(/["*]/g, ""))
-    .filter(Boolean);
-  if (tokens.length === 0) return null;
-  return tokens.map((t) => `"${t}"*`).join(" ");
+    .join(" ");
+  if (!cleaned) return null;
+  return `${ftsQuoteTerm(cleaned)}*`;
 }
 
 // FTS5 string-literal quoting: wrap a term in double quotes, doubling any
@@ -31,29 +48,54 @@ function ftsQuoteTerm(term: string): string {
   return `"${term.replace(/"/g, '""')}"`;
 }
 
-// The simple search box matches title/artist/notes text (via the existing
-// word-tokenized records_fts) *and* matrix/label catalog numbers (via
-// records_catalog_fts, a trigram-tokenized index over the raw code columns
-// — see lib/db/ddl.ts) — collectors search by catalog number as often as by
-// title (e.g. "search 1022, get 42 hits"), and records_fts's tokenizer
-// doesn't reliably do substring matches inside codes like "WIPX1022".
+// Normalizes the term used for the trigram catalog search so that a text
+// query is punctuation-insensitive, while a catalog *code* is not.
 //
-// The catalog lookup is index-backed but not uniformly cheap: a multi-word
-// *phrase* match against the trigram index (e.g. "alton ellis", two words)
-// measured at 1.5-3.5s on the live database, versus low hundreds of ms for
-// a single short token like "1022" — the cost scales with how many
-// consecutive trigram positions have to be verified, not just whether an
-// index exists. Real matrix/label numbers are always either a single
-// token ("WIPX1022") or contain a digit ("WIRL BE 1022-2") — a multi-word,
-// all-alphabetic query (an artist or title search, the common case) is
-// never a catalog code, so it skips this check entirely rather than pay a
-// multi-second tax on every plain-text search. One separate known gap: the
-// trigram tokenizer can't match terms under 3 characters (see
-// MIN_TRIGRAM_LENGTH below), so a 1-2 character keyword search won't
-// surface catalog-number matches either — accepted here since real
-// matrix/label numbers are essentially never that short; advancedSearch has
-// an exact-match fallback for the one field where short terms are actually
-// common (2-letter country codes).
+// A trigram match is exact over the literal characters, punctuation
+// included — so "will-power" (hyphen) and "will power" (space) were
+// different searches: the hyphenated one additionally matched a label
+// literally named "Will-Power Records", the spaced one didn't. A visitor
+// reasonably expects those two to behave identically (records_fts already
+// treats them the same, since its word tokenizer splits on the hyphen).
+// So for a plain text query, collapse every run of non-alphanumerics to a
+// single space, making hyphen and space equivalent.
+//
+// But that normalization must NOT apply to catalog numbers, where the
+// punctuation is load-bearing: a matrix number is stored like "GP 1660-1
+// TSL" and a collector searching "1660-1" needs the hyphen kept intact to
+// trigram-match it. The presence of a digit is the tell — real
+// catalog/label numbers contain digits, ordinary word searches don't — so
+// digit-bearing queries pass through untouched.
+function normalizeCatalogTerm(term: string): string {
+  if (/\d/.test(term)) return term.toLowerCase();
+  return term.replace(/[^a-z0-9]+/gi, " ").trim().toLowerCase();
+}
+
+// The simple search box matches title/artist/notes text (via the existing
+// word-tokenized records_fts) *and* every field records_catalog_fts covers —
+// artist, title, label, label/matrix numbers, producer, country, format,
+// year, genre, riddim, origin, notes (see CATALOG_FTS_COLUMNS in
+// lib/db/ddl.ts) — a trigram-tokenized index over the raw values, giving
+// substring matches records_fts's word tokenizer can't do reliably (e.g.
+// inside a code like "WIPX1022").
+//
+// This used to check only matrix_number/label_number, and only for queries
+// that "looked like" a catalog code (had a digit, or no whitespace) —
+// gated that narrowly because an early version measured a *single* trigram
+// column at 1.4-3.5s for a two-word phrase. Re-measured after fixing an
+// unrelated OR-vs-AND planner issue: querying all 13 columns at once is
+// consistently fast (validated directly against the live database: a
+// single word across all columns ~100-300ms, a two-word phrase ~200-600ms,
+// even a broad single word matching 57k+ rows ~1.3s) — cheap enough to
+// always run, which is also what fixed a real reported bug: searching a
+// label name like "tysonic" from the keyword box found nothing, because
+// records_fts doesn't index the label field at all and the old catalog
+// check didn't either (it only ever looked at catalog *numbers*, not
+// names). One remaining known gap: the trigram tokenizer can't match terms
+// under 3 characters (see MIN_TRIGRAM_LENGTH below), so a 1-2 character
+// keyword search won't surface these matches — accepted here since
+// advancedSearch has an exact-match fallback for the one field where short
+// terms are actually common (2-letter country codes).
 export async function keywordSearch(
   q: string,
   opts: { sort?: string; dir?: string; page?: number }
@@ -69,23 +111,21 @@ export async function keywordSearch(
     .join(", ");
 
   const ftsQuery = buildFtsQuery(q);
-  const looksLikeCatalogCode = /\d/.test(trimmed) || !/\s/.test(trimmed);
 
   let catalogIds: number[] = [];
-  if (looksLikeCatalogCode) {
-    const quotedTerm = ftsQuoteTerm(trimmed.toLowerCase());
-    const catalogQuery = `matrix_number:${quotedTerm} OR label_number:${quotedTerm}`;
-    try {
-      const catalogRes = await client.execute({
-        sql: `SELECT rowid AS id FROM records_catalog_fts WHERE records_catalog_fts MATCH ?`,
-        args: [catalogQuery],
-      });
-      catalogIds = (catalogRes.rows as unknown as { id: number }[]).map((r) => Number(r.id));
-    } catch {
-      // Trigram tokenizer can't form any trigram from a 1-2 character term —
-      // no match, not an error, but guard anyway for genuinely malformed input.
-      catalogIds = [];
-    }
+  const catalogTerm = normalizeCatalogTerm(trimmed);
+  const quotedTerm = ftsQuoteTerm(catalogTerm);
+  const catalogQuery = CATALOG_FTS_COLUMNS.map((c) => `${c}:${quotedTerm}`).join(" OR ");
+  try {
+    const catalogRes = await client.execute({
+      sql: `SELECT rowid AS id FROM records_catalog_fts WHERE records_catalog_fts MATCH ?`,
+      args: [catalogQuery],
+    });
+    catalogIds = (catalogRes.rows as unknown as { id: number }[]).map((r) => Number(r.id));
+  } catch {
+    // Trigram tokenizer can't form any trigram from a 1-2 character term —
+    // no match, not an error, but guard anyway for genuinely malformed input.
+    catalogIds = [];
   }
 
   // Fetch up to one more than the sort threshold in a single round trip: if
@@ -118,6 +158,15 @@ export async function keywordSearch(
     }
   }
 
+  // Upper bound, not exact: catalog_fts now covers the same fields
+  // records_fts does (title, artist, notes) plus many more, so the two id
+  // sets overlap far more than when the catalog check only ever looked at
+  // matrix/label numbers — a title match now routinely shows up in both.
+  // The branch below recomputes an exact, deduplicated total whenever it
+  // actually materializes both full id sets (the common case); the
+  // large-result fallback further down keeps this approximate value, a
+  // known, accepted tradeoff for not having to materialize a huge id set
+  // just to count it precisely.
   const total = ftsTotal + catalogIds.length;
   if (total === 0) return { rows: [], total: 0 };
 
@@ -132,14 +181,33 @@ export async function keywordSearch(
   // fixes that; both id lists here are already small/bounded.
   if (opts.sort || total <= ALPHA_SORT_THRESHOLD) {
     const { clause } = buildOrderClause(opts.sort, opts.dir, total);
-    const idList = [...new Set<number>([...catalogIds, ...ftsIds])];
-    if (idList.length === 0) return { rows: [], total };
+    const idSet = new Set<number>(catalogIds);
+    if (ftsQuery && ftsIds.length > 0) {
+      for (const id of ftsIds) idSet.add(id);
+    } else if (ftsQuery && ftsTotal > 0) {
+      // ftsIds was cleared earlier (the FTS match alone exceeded the cap),
+      // but an explicit sort was requested here regardless of size — need
+      // the fuller id set now to sort/dedupe correctly, so re-fetch it,
+      // bounded the same way.
+      try {
+        const res = await client.execute({
+          sql: `SELECT rowid AS id FROM records_fts WHERE records_fts MATCH ? LIMIT ?`,
+          args: [ftsQuery, ALPHA_SORT_THRESHOLD],
+        });
+        for (const r of res.rows as unknown as { id: number }[]) idSet.add(Number(r.id));
+      } catch {
+        // ignore — already reflected in ftsTotal
+      }
+    }
+    const idList = [...idSet];
+    const exactTotal = idList.length; // deduplicated — the real count, not the upper bound above
+    if (idList.length === 0) return { rows: [], total: exactTotal };
     const placeholders = idList.map(() => "?").join(",");
     const rowsRes = await client.execute({
       sql: `SELECT ${cols} FROM records r WHERE r.id IN (${placeholders}) ${clause} LIMIT ? OFFSET ?`,
       args: [...idList, PAGE_SIZE, (page - 1) * PAGE_SIZE],
     });
-    return { rows: rowsRes.rows as unknown as RecordListRow[], total };
+    return { rows: rowsRes.rows as unknown as RecordListRow[], total: exactTotal };
   }
 
   // Large result, no explicit sort requested (e.g. a very common word):
@@ -178,7 +246,13 @@ export async function keywordSearch(
       const byId = new Map(
         (catalogRowsRes.rows as unknown as RecordListRow[]).map((r) => [r.id, r])
       );
+      // Skip any catalog id already shown among the FTS rows on this same
+      // page — now that catalog_fts covers title/artist/notes too, a record
+      // can legitimately match both sources and would otherwise appear
+      // twice within one page.
+      const seen = new Set(rows.map((r) => r.id));
       for (const id of catalogPageIds) {
+        if (seen.has(id)) continue;
         const row = byId.get(id);
         if (row) rows.push(row);
       }
