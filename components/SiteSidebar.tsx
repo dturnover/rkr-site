@@ -4,6 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { FACET_ORDER, FACETS } from "@/lib/facetConfig";
 
+const ABOUT_LINKS: { href: string; label: string }[] = [
+  { href: "/guide", label: "User's Guide" },
+  { href: "/history", label: "History of RKR" },
+  { href: "/interviews", label: "Interviews & Features" },
+];
+
 export default function SiteSidebar() {
   const pathname = usePathname();
 
@@ -45,6 +51,23 @@ export default function SiteSidebar() {
             Advanced Search
           </Link>
         </li>
+
+        {ABOUT_LINKS.map((link, i) => (
+          <li
+            key={link.href}
+            className={i === 0 ? "lg:mt-2 lg:pt-2 lg:border-t lg:border-paper-stain" : undefined}
+          >
+            <Link
+              href={link.href}
+              aria-current={pathname === link.href ? "page" : undefined}
+              className={`block underline decoration-paper-stain decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 hover:text-rasta-red ${
+                pathname === link.href ? "text-rasta-red font-semibold" : "text-ink"
+              }`}
+            >
+              {link.label}
+            </Link>
+          </li>
+        ))}
       </ul>
     </nav>
   );
