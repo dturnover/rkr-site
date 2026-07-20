@@ -1,5 +1,6 @@
 import { getClient } from "@/lib/db/client";
 import { CATALOG_FTS_COLUMNS } from "@/lib/db/ddl";
+import { PAGE_SIZE } from "@/lib/queries/shared";
 
 // The editor overlay: everything editors change lives here, in tables OUTSIDE
 // the import-swap set, so it survives every CSV upload and is re-applied on
@@ -349,8 +350,10 @@ export interface GlobalLogEntry extends LogEntry {
   record_id: number | null;
 }
 
-/** The global modification log (newest first), paginated. */
-export async function getGlobalLog(page: number, pageSize = 50): Promise<{ entries: GlobalLogEntry[]; total: number }> {
+/** The global modification log (newest first), paginated. Defaults to the
+ * site-wide PAGE_SIZE so the shared Pagination component (which derives the
+ * page count from that same constant) stays in agreement. */
+export async function getGlobalLog(page: number, pageSize = PAGE_SIZE): Promise<{ entries: GlobalLogEntry[]; total: number }> {
   await ensureOverlayTables();
   const client = await getClient();
   const totalRes = await client.execute(`SELECT COUNT(*) AS c FROM modification_log`);

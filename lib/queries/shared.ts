@@ -1,4 +1,4 @@
-export const PAGE_SIZE = 50;
+export const PAGE_SIZE = 100;
 
 export type SortKey =
   | "artist"

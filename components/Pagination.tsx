@@ -109,6 +109,38 @@ export default function Pagination({
             Next &raquo;
           </Link>
         )}
+
+        {/* Jump straight to a page. Only shown when an ellipsis is actually
+            hiding pages — with a long result set the numbered links only ever
+            reach a few pages either side, so landing in the middle otherwise
+            means editing the URL by hand. A plain GET form (no client JS):
+            every current query param is re-submitted as a hidden input so the
+            search/sort/filter context survives, with `page` replaced by what
+            was typed. */}
+        {(showFirstGap || showLastGap) && (
+          <form className="flex items-center gap-1 ml-2">
+            {[...searchParams.entries()]
+              .filter(([key]) => key !== "page")
+              .map(([key, value], i) => (
+                <input key={`${key}-${i}`} type="hidden" name={key} value={value} />
+              ))}
+            <input
+              type="number"
+              name="page"
+              min={1}
+              max={totalPages}
+              placeholder={`1-${totalPages}`}
+              aria-label={`Go to page (1 to ${totalPages})`}
+              className="w-20 px-2 py-1 border border-paper-stain bg-paper text-ink text-center focus:outline-none focus:border-rasta-red"
+            />
+            <button
+              type="submit"
+              className="px-2 py-1 border border-paper-stain hover:bg-paper text-ink"
+            >
+              Go
+            </button>
+          </form>
+        )}
       </div>
     </nav>
   );
