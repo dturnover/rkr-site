@@ -68,12 +68,18 @@ export function readSessionCookie(value: string | undefined | null): SessionPayl
   }
 }
 
-/** Constant-time check of a candidate against the bootstrap ADMIN_PASSWORD. */
+/** Constant-time check of a candidate against the bootstrap ADMIN_PASSWORD.
+ *
+ * Comparing the raw buffers would require an early `a.length !== b.length`
+ * return (timingSafeEqual throws on a length mismatch), and that branch is
+ * itself an oracle: it reveals the real password's length, which meaningfully
+ * narrows a brute-force search. Hashing both sides first makes every
+ * comparison run over a fixed 32 bytes, so neither the length nor the content
+ * of the guess changes the timing. */
 export function checkAdminPassword(candidate: string): boolean {
   const actual = process.env.ADMIN_PASSWORD;
   if (!actual) return false;
-  const a = Buffer.from(candidate);
-  const b = Buffer.from(actual);
-  if (a.length !== b.length) return false;
+  const a = crypto.createHash("sha256").update(candidate, "utf8").digest();
+  const b = crypto.createHash("sha256").update(actual, "utf8").digest();
   return crypto.timingSafeEqual(a, b);
 }

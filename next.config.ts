@@ -36,6 +36,14 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
+          // Force HTTPS for two years, subdomains included. The admin session
+          // cookie is Secure, but without HSTS a first visit typed as
+          // "http://" still makes one cleartext round trip that an attacker
+          // on the network can hijack before the redirect to HTTPS.
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },

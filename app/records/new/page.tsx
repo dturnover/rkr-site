@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import EditorRecordForm from "@/components/EditorRecordForm";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
+
+// Editor-only page — keep it out of search results.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
 
 export default async function NewRecordPage({
   searchParams,

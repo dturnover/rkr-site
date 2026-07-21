@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import Pagination from "@/components/Pagination";
@@ -5,6 +6,11 @@ import { getSession } from "@/lib/auth/requireAdmin";
 import { getGlobalLog } from "@/lib/editor/overlay";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
+
+// Editor-only page: names and edit history should never be search-indexed.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);

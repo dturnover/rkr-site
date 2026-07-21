@@ -7,14 +7,31 @@ import { getSession } from "@/lib/auth/requireAdmin";
 import { computeRecordKey, getRecordLog } from "@/lib/editor/overlay";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
-// Only accept a same-origin relative path (must start with exactly one "/",
-// never "//" which browsers treat as protocol-relative to another host) —
-// `back` comes from a URL query param, so treat it as untrusted input even
-// though it's only ever used to render an in-page link, never a redirect.
+// `back` comes from a URL query param, so it's untrusted input even though
+// it only ever renders an in-page link, never a server redirect.
+//
+// Rejecting "//" by prefix is NOT sufficient: browsers normalise a backslash
+// to a forward slash while parsing, so "/\evil.com" passes a naive
+// startsWith("//") check and still resolves to https://evil.com — an
+// off-site "Back to results" link, i.e. a phishing vector. Rather than play
+// whack-a-mole with escape variants, resolve the value against a dummy
+// origin and require that it actually stayed on that origin.
+const DUMMY_ORIGIN = "https://rkr.invalid";
+
 function safeBackHref(value: string | undefined): string | null {
   if (!value) return null;
-  if (!value.startsWith("/") || value.startsWith("//")) return null;
-  return value;
+  if (!value.startsWith("/")) return null;
+  // Control characters (tab/newline) are stripped by URL parsers and can be
+  // used to smuggle a scheme past the checks below.
+  if (/[\u0000-\u0020\\]/.test(value)) return null;
+  let resolved: URL;
+  try {
+    resolved = new URL(value, DUMMY_ORIGIN);
+  } catch {
+    return null;
+  }
+  if (resolved.origin !== DUMMY_ORIGIN) return null;
+  return `${resolved.pathname}${resolved.search}`;
 }
 
 export default async function RecordPage({

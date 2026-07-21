@@ -1,8 +1,17 @@
+import type { Metadata } from "next";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { listUsers } from "@/lib/auth/users";
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import BlobUploadForm from "@/components/BlobUploadForm";
+
+// robots.txt asks crawlers not to fetch this path, but that only works for
+// crawlers that read it — and a URL that leaks some other way (a referrer, a
+// pasted link) can still be indexed. noindex is the directive that actually
+// keeps the sign-in page out of search results.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
 
 function Banner({ children, tone }: { children: React.ReactNode; tone: "good" | "warn" | "bad" }) {
   const colors =
