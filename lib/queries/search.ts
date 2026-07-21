@@ -180,7 +180,9 @@ export async function keywordSearch(
   // testing). Materializing the combined id set and sorting it properly
   // fixes that; both id lists here are already small/bounded.
   if (opts.sort || total <= ALPHA_SORT_THRESHOLD) {
-    const { clause } = buildOrderClause(opts.sort, opts.dir, total);
+    // "r." — every query below selects FROM records aliased as r (some joined
+// against an FTS table whose columns share these names). See buildOrderClause.
+const { clause } = buildOrderClause(opts.sort, opts.dir, total, "r.");
     const idSet = new Set<number>(catalogIds);
     if (ftsQuery && ftsIds.length > 0) {
       for (const id of ftsIds) idSet.add(id);
@@ -377,7 +379,9 @@ export async function advancedSearch(
       });
       const total = Number(totalRes.rows[0]?.c ?? 0);
       if (total === 0) return { rows: [], total: 0 };
-      const { clause } = buildOrderClause(opts.sort, opts.dir, total);
+      // "r." — every query below selects FROM records aliased as r (some joined
+// against an FTS table whose columns share these names). See buildOrderClause.
+const { clause } = buildOrderClause(opts.sort, opts.dir, total, "r.");
 
       const rowsRes = await client.execute({
         sql: `SELECT ${cols} FROM records r WHERE ${whereClause} ${clause} LIMIT ? OFFSET ?`,
@@ -405,7 +409,9 @@ export async function advancedSearch(
     });
     const total = Number(totalRes.rows[0]?.c ?? 0);
     if (total === 0) return { rows: [], total: 0 };
-    const { clause } = buildOrderClause(opts.sort, opts.dir, total);
+    // "r." — every query below selects FROM records aliased as r (some joined
+// against an FTS table whose columns share these names). See buildOrderClause.
+const { clause } = buildOrderClause(opts.sort, opts.dir, total, "r.");
 
     const rowsRes = await client.execute({
       sql: `SELECT ${cols} FROM records_catalog_fts f
@@ -417,7 +423,14 @@ export async function advancedSearch(
     });
 
     return { rows: rowsRes.rows as unknown as RecordListRow[], total };
-  } catch {
+  } catch (err) {
+    // Returning empty keeps malformed user input (e.g. a term too short for
+    // the trigram tokenizer) from 500-ing the page. But this same catch once
+    // silently swallowed a real SQL bug — an ambiguous ORDER BY column made
+    // sorting a field search return "no results" with no trace anywhere. Log
+    // it so a genuine fault shows up in the server logs instead of looking
+    // like an empty result set.
+    console.error("advancedSearch failed:", err);
     return { rows: [], total: 0 };
   }
 }

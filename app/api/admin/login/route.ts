@@ -7,10 +7,10 @@ import {
   checkAdminPassword,
 } from "@/lib/auth/session";
 import { verifyCredentials } from "@/lib/auth/users";
-import { isLockedOut, recordFailure, recordSuccess } from "@/lib/auth/rateLimiter";
+import { isLockedOut, recordFailure, recordSuccess, loginKeys } from "@/lib/auth/loginRateLimit";
 import { isBodyTooLarge, LOGIN_BODY_MAX_BYTES } from "@/lib/http/bodySizeGuard";
 
-function clientKey(request: NextRequest): string {
+function clientIp(request: NextRequest): string {
   return request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
 }
 
@@ -19,14 +19,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL("/admin?error=invalid-password", request.url));
   }
 
-  const key = clientKey(request);
-  if (isLockedOut(key)) {
-    return NextResponse.redirect(new URL("/admin?error=too-many-attempts", request.url));
-  }
-
   const formData = await request.formData();
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+
+  // Throttle by source address AND by the account being targeted, so a
+  // distributed guess against one account is caught too.
+  const keys = loginKeys(clientIp(request), email);
+  if (await isLockedOut(keys)) {
+    return NextResponse.redirect(new URL("/admin?error=too-many-attempts", request.url));
+  }
 
   // A provisioned account (admin or editor) is tried first, so a real editor
   // row is always used when the email matches one. The bootstrap ADMIN_PASSWORD
@@ -46,10 +48,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (!session) {
-    recordFailure(key);
+    await recordFailure(keys);
     return NextResponse.redirect(new URL("/admin?error=invalid-password", request.url));
   }
-  recordSuccess(key);
+  await recordSuccess(keys);
 
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, createSessionCookie(session), {

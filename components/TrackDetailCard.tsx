@@ -83,7 +83,10 @@ export default function TrackDetailCard({ record }: { record: RecordDetail }) {
           <Field label="Genre" value={record.genre} facet="genres" />
           <Field label="Version Side?" value={capitalizeFirst(record.version)} />
           <Field label="Song Origin" value={record.song_origin} facet="origins" />
-          <Field label="Additions" value={record.additions} />
+          {/* "Additions" is deliberately not shown: it's the compiler's own
+              private working column (tracking what he added to an entry), not
+              catalogue information for visitors. Still imported and stored —
+              just not surfaced. */}
           <Field label="Notes" value={record.notes} wrap />
         </dl>
       </section>

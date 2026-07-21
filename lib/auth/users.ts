@@ -1,5 +1,5 @@
 import { getClient } from "@/lib/db/client";
-import { hashPassword, verifyPassword } from "./password";
+import { hashPassword, verifyPassword, burnPasswordWork } from "./password";
 
 // The users table lives OUTSIDE the import-swap set (atomicSwap.ts only
 // renames records/records_fts/records_catalog_fts), so editor accounts —
@@ -59,7 +59,12 @@ export async function verifyCredentials(email: string, password: string): Promis
   const row = res.rows[0] as unknown as
     | (UserRow & { password_hash: string; password_salt: string })
     | undefined;
-  if (!row) return null;
+  if (!row) {
+    // Spend the same time as a real check so an unknown address is
+    // indistinguishable from a wrong password (see burnPasswordWork).
+    burnPasswordWork(password);
+    return null;
+  }
   if (!verifyPassword(password, row.password_hash, row.password_salt)) return null;
   return {
     id: Number(row.id),
@@ -68,6 +73,29 @@ export async function verifyCredentials(email: string, password: string): Promis
     role: row.role === "admin" ? "admin" : "editor",
     active: Number(row.active),
     created_at: String(row.created_at),
+  };
+}
+
+/** Looks up an ACTIVE user by id. Used on every authenticated request so that
+ * disabling (or deleting) an account takes effect immediately, and so a role
+ * change is picked up from the database rather than trusted from the cookie. */
+export async function getActiveUserById(id: number): Promise<UserRow | null> {
+  await ensureUsersTable();
+  const client = await getClient();
+  const res = await client.execute({
+    sql: `SELECT id, email, display_name, role, active, created_at
+          FROM users WHERE id = ? AND active = 1 LIMIT 1`,
+    args: [id],
+  });
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    id: Number(r.id),
+    email: String(r.email),
+    display_name: String(r.display_name),
+    role: r.role === "admin" ? "admin" : "editor",
+    active: Number(r.active),
+    created_at: String(r.created_at),
   };
 }
 

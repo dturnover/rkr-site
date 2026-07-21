@@ -68,24 +68,39 @@ export const RESULT_COLUMNS = `
 // omitted) get the safe (id) behavior.
 export const ALPHA_SORT_THRESHOLD = 5000;
 
-export function buildOrderClause(sort: string | undefined, dir: string | undefined, total?: number) {
+// `prefix` qualifies the sort columns with a table alias (e.g. "r."). It is
+// REQUIRED wherever the query joins records against one of the FTS tables:
+// records_catalog_fts indexes columns with the same names as the records
+// table (title, label_number, matrix_number...), so an unqualified
+// `ORDER BY matrix_number` is genuinely ambiguous and SQLite rejects the whole
+// statement ("ambiguous column name: matrix_number"). That surfaced as a
+// reported bug — a label search returned results, then sorting by Matrix No.
+// showed none, because the error was being caught and turned into an empty
+// result set. Sorting by artist/year never broke, since those map to
+// artist_norm/year_sort, which the FTS table has no column for.
+export function buildOrderClause(
+  sort: string | undefined,
+  dir: string | undefined,
+  total?: number,
+  prefix = ""
+) {
   if (!isSortKey(sort ?? "")) {
     if (total !== undefined && total <= ALPHA_SORT_THRESHOLD) {
       return {
         sortKey: "artist" as const,
         direction: "ASC" as const,
-        clause: `ORDER BY (artist_norm IS NULL) ASC, artist_norm ASC`,
+        clause: `ORDER BY (${prefix}artist_norm IS NULL) ASC, ${prefix}artist_norm ASC`,
       };
     }
     return {
       sortKey: "id" as const,
       direction: "ASC" as const,
-      clause: `ORDER BY id ASC`,
+      clause: `ORDER BY ${prefix}id ASC`,
     };
   }
   const sortKey = sort as SortKey;
   const direction = dir === "desc" ? "DESC" : "ASC";
-  const column = SORT_COLUMNS[sortKey];
+  const column = `${prefix}${SORT_COLUMNS[sortKey]}`;
   // NULLs last regardless of direction, so blank fields don't dominate either end.
   return {
     sortKey,

@@ -18,7 +18,10 @@ const A_SIDE: FieldDef[] = [
   { name: "genre", label: "Genre" },
   { name: "version", label: "Version Side? (yes/blank)" },
   { name: "song_origin", label: "Song Origin" },
-  { name: "additions", label: "Additions", area: true },
+  // "additions" is intentionally absent — it's the compiler's private working
+  // column, not something editors should set. Because the save route only
+  // applies fields actually present in the submitted form, leaving it out
+  // preserves whatever value the record already has.
   { name: "notes", label: "Notes", area: true },
 ];
 
