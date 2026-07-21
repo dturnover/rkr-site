@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { FACET_ORDER, FACETS } from "@/lib/facetConfig";
+// import { FACET_ORDER, FACETS } from "@/lib/facetConfig"; // see "Browse the Catalogue" below
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
 import HeaderSearchForm from "@/components/HeaderSearchForm";
 
@@ -9,17 +9,17 @@ import HeaderSearchForm from "@/components/HeaderSearchForm";
 // force dynamic rendering) must not be statically cached at build time.
 export const dynamic = "force-dynamic";
 
-const TILE_ICONS: Record<string, string> = {
-  artists: "🎤",
-  countries: "🗺",
-  years: "📅",
-  formats: "💿",
-  labels: "🏷",
-  producers: "🎛",
-  riddims: "🥁",
-  genres: "🎼",
-  origins: "✎",
-};
+// const TILE_ICONS: Record<string, string> = {
+//   artists: "🎤",
+//   countries: "🗺",
+//   years: "📅",
+//   formats: "💿",
+//   labels: "🏷",
+//   producers: "🎛",
+//   riddims: "🥁",
+//   genres: "🎼",
+//   origins: "✎",
+// };
 
 export default async function Home() {
   const status = await getDatabaseStatus();
@@ -59,6 +59,12 @@ export default async function Home() {
         </span>
       </Link>
 
+      {/* "Browse the Catalogue" tile grid — removed by request, kept here in
+          case we want it back. The same nine facets are always reachable from
+          the sidebar, so nothing is unreachable without it. To restore:
+          uncomment this block plus the TILE_ICONS map and the facetConfig
+          import at the top of the file.
+
       <section>
         <h2 className="font-display text-2xl text-center text-ink mb-6">Browse the Catalogue</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
@@ -76,6 +82,7 @@ export default async function Home() {
           ))}
         </div>
       </section>
+      */}
 
       <section className="border-t border-paper-stain pt-8">
         <h2 className="font-display text-2xl text-center text-ink mb-5">
