@@ -280,26 +280,34 @@ export interface AdvancedSearchFields {
   notes?: string;
 }
 
-// Maps each advanced-search field to its column in records_catalog_fts
-// (lib/db/ddl.ts) — every field here used to be a `column LIKE '%value%'`
-// full-table scan, measured at 40-100+ seconds per query on the live
-// database (no B-tree index can serve a leading-wildcard substring match).
-// records_catalog_fts is trigram-tokenized, so the same substring semantics
-// are now served from an actual index.
-const CATALOG_FIELD_COLUMN: Record<keyof AdvancedSearchFields, string> = {
-  artist: "artist",
-  title: "title",
-  label: "label",
-  labelNumber: "label_number",
-  matrixNumber: "matrix_number",
-  producer: "producer",
-  country: "country",
-  format: "format",
-  year: "year",
-  genre: "genre",
-  riddim: "riddim",
-  origin: "origin",
-  notes: "notes",
+// Maps each advanced-search field to the records_catalog_fts column(s)
+// (lib/db/ddl.ts) it searches — every field here used to be a
+// `column LIKE '%value%'` full-table scan, measured at 40-100+ seconds per
+// query on the live database (no B-tree index can serve a leading-wildcard
+// substring match). records_catalog_fts is trigram-tokenized, so the same
+// substring semantics are now served from an actual index.
+//
+// Four fields map to BOTH sides of the record: to a collector, "is this
+// artist / title / catalogue number in the database" shouldn't depend on
+// which side of the 45 it landed on. So searching Artist matches a B-side
+// artist too, Title matches a B-side title, etc. The remaining fields
+// (label, producer, country, format, year, genre, riddim, origin, notes)
+// have no distinct B-side column, so they're unchanged. When a field lists
+// more than one column the terms are OR'd within that field (see below).
+const CATALOG_FIELD_COLUMN: Record<keyof AdvancedSearchFields, string[]> = {
+  artist: ["artist", "b_side_artist"],
+  title: ["title", "b_side_title"],
+  label: ["label"],
+  labelNumber: ["label_number", "b_side_label_number"],
+  matrixNumber: ["matrix_number", "b_side_matrix_number"],
+  producer: ["producer"],
+  country: ["country"],
+  format: ["format"],
+  year: ["year"],
+  genre: ["genre"],
+  riddim: ["riddim"],
+  origin: ["origin"],
+  notes: ["notes"],
 };
 
 // Fallback for terms shorter than a trigram (below): the equivalent lookup
@@ -346,19 +354,27 @@ export async function advancedSearch(
   const exactWheres: string[] = [];
   const exactArgs: string[] = [];
 
-  for (const [key, column] of Object.entries(CATALOG_FIELD_COLUMN) as [
+  for (const [key, columns] of Object.entries(CATALOG_FIELD_COLUMN) as [
     keyof AdvancedSearchFields,
-    string
+    string[]
   ][]) {
     const raw = fields[key];
     if (!raw || raw.trim() === "") continue;
     const value = raw.trim();
     if (value.length < MIN_TRIGRAM_LENGTH) {
+      // Below the trigram floor we fall back to an exact indexed lookup, which
+      // only exists for the A-side (the _norm columns). A 1-2 character B-side
+      // search is vanishingly rare and this keeps the fast path fast — the
+      // same accepted limitation already noted for keyword search.
       const exact = EXACT_FIELD_COLUMN[key];
       exactWheres.push(`r.${exact.column} = ?`);
       exactArgs.push(exact.norm ? value.toLowerCase() : value);
     } else {
-      matchParts.push(`${column}:${ftsQuoteTerm(value.toLowerCase())}`);
+      const quoted = ftsQuoteTerm(value.toLowerCase());
+      // One column -> `col:term`; two -> `(colA:term OR colB:term)`, so this
+      // field matches either side while still AND-combining with other fields.
+      const clause = columns.map((c) => `${c}:${quoted}`).join(" OR ");
+      matchParts.push(columns.length > 1 ? `(${clause})` : clause);
     }
   }
 

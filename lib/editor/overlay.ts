@@ -91,6 +91,9 @@ const CATALOG_FTS_SOURCE: Record<string, string> = {
   producer: "producer_norm", country: "country_norm", format: "format_norm",
   year: "lower(year)", genre: "genre_norm", riddim: "riddim_norm",
   origin: "origin_norm", notes: "lower(notes)",
+  b_side_artist: "lower(b_side_artist)", b_side_artist_credit: "lower(b_side_artist_credit)",
+  b_side_title: "lower(b_side_title)", b_side_title_credit: "lower(b_side_title_credit)",
+  b_side_matrix_number: "lower(b_side_matrix_number)", b_side_label_number: "lower(b_side_label_number)",
 };
 
 function nullIfBlank(v: string | null | undefined): string | null {

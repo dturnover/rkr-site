@@ -58,6 +58,19 @@ export const CATALOG_FTS_COLUMNS = [
   "riddim",
   "origin",
   "notes",
+  // B-side fields. Every record can carry a whole second song on its flip
+  // side (the b_side_* columns on `records`), and the detail page shows it,
+  // but none of it was indexed here — so a B-side artist, title, or catalogue
+  // number was completely invisible to search (a reported bug). Indexing them
+  // in the same trigram table makes them findable from the keyword box (which
+  // ORs across every column here) and from the matching Advanced Search
+  // fields (see CATALOG_FIELD_COLUMN in lib/queries/search.ts).
+  "b_side_artist",
+  "b_side_artist_credit",
+  "b_side_title",
+  "b_side_title_credit",
+  "b_side_matrix_number",
+  "b_side_label_number",
 ] as const;
 
 export function buildDdl(tableName: string): string {

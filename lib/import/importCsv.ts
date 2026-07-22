@@ -50,7 +50,7 @@ const FTS_COLUMNS = ["title", "title_credit", "artist", "artist_credit", "notes"
 // as-is (already lowercased in JS during parsing); raw columns are
 // lower()'d in SQL so the whole catalog_fts table is uniformly lowercase —
 // see the comment on CATALOG_FTS_COLUMNS in lib/db/ddl.ts.
-const CATALOG_FTS_SOURCE_EXPR: Record<(typeof CATALOG_FTS_COLUMNS)[number], string> = {
+export const CATALOG_FTS_SOURCE_EXPR: Record<(typeof CATALOG_FTS_COLUMNS)[number], string> = {
   artist: "artist_norm",
   title: "lower(title)",
   label: "label_norm",
@@ -64,6 +64,14 @@ const CATALOG_FTS_SOURCE_EXPR: Record<(typeof CATALOG_FTS_COLUMNS)[number], stri
   riddim: "riddim_norm",
   origin: "origin_norm",
   notes: "lower(notes)",
+  // B-side fields have no _norm columns, so lower() the raw value in SQL
+  // (same treatment as title/label_number/matrix_number above).
+  b_side_artist: "lower(b_side_artist)",
+  b_side_artist_credit: "lower(b_side_artist_credit)",
+  b_side_title: "lower(b_side_title)",
+  b_side_title_credit: "lower(b_side_title_credit)",
+  b_side_matrix_number: "lower(b_side_matrix_number)",
+  b_side_label_number: "lower(b_side_label_number)",
 };
 
 // _norm columns, computed here in JS and inserted as plain values rather
