@@ -120,8 +120,28 @@ function deriveYearSort(year: string | null): number | null {
 // row is turned into insert values.
 export type FieldRow = Record<string, string | null>;
 
+// Decode the upload, auto-detecting UTF-8 vs Windows-1252.
+//
+// The original RKR.csv export was Windows-1252 (confirmed encoding), and this
+// used to hard-decode that. But when the compiler moved to maintaining the
+// catalogue in Excel, the export became genuine UTF-8 — and it contains
+// characters cp1252 simply cannot represent: Greek Δ/τ/α and symbols like
+// ✳ ◇ ✴ ∙ used inside matrix numbers as stamper marks (hundreds of them, a
+// primary search key). Decoding those as cp1252 silently replaced them,
+// corrupting the numbers. So try UTF-8 strictly first (TextDecoder with
+// fatal:true throws on any invalid sequence); only if that fails fall back to
+// cp1252, which covers the older-style exports. A pure-ASCII file decodes
+// identically either way, so this is safe for every prior file too.
+function decodeUpload(buffer: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(buffer);
+  } catch {
+    return iconv.decode(buffer, "win1252");
+  }
+}
+
 export function parseCsvBuffer(buffer: Buffer): FieldRow[] {
-  const text = iconv.decode(buffer, "win1252");
+  const text = decodeUpload(buffer);
   const rows: string[][] = parse(text, {
     columns: false,
     from_line: 2, // skip header row
