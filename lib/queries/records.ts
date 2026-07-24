@@ -11,6 +11,7 @@ export interface RecordDetail {
   label: string | null;
   country: string | null;
   format: string | null;
+  pressing: string | null;
   producer: string | null;
   year: string | null;
   riddim: string | null;
@@ -31,7 +32,7 @@ export async function getRecordById(id: number): Promise<RecordDetail | null> {
   const client = await getClient();
   const res = await client.execute({
     sql: `SELECT id, artist, artist_credit, title, title_credit, matrix_number, label_number,
-                 label, country, format, producer, year, riddim, version, genre, notes,
+                 label, country, format, pressing, producer, year, riddim, version, genre, notes,
                  song_origin, additions, b_side_artist, b_side_artist_credit, b_side_title,
                  b_side_title_credit, b_side_matrix_number, b_side_label_number
           FROM records WHERE id = ? LIMIT 1`,

@@ -90,6 +90,7 @@ CREATE TABLE ${tableName} (
   label                 TEXT,
   country               TEXT,
   format                TEXT,
+  pressing              TEXT,
   producer              TEXT,
   year                  TEXT,
   year_sort             INTEGER,

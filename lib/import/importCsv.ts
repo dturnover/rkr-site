@@ -10,11 +10,15 @@ import {
 } from "@/lib/db/ddl";
 import { computeRecordKey, EDITABLE_FIELDS, getOverlayForMerge } from "@/lib/editor/overlay";
 
-// Exact column order of the RKR.csv export. `blank1` is a genuinely empty
-// spacer column in the source file and is intentionally dropped; every other
-// name here becomes a `records` column of the same name. Any columns beyond
-// index 23 (the "Unnamed: 24-28" trailing junk columns pandas reports) are
-// never read, by construction, since we only ever index into this array.
+// Exact column order of the RKR.csv export. Every name here becomes a
+// `records` column of the same name. Any columns beyond index 23 (the
+// "Unnamed: 24-28" trailing junk columns pandas reports) are never read, by
+// construction, since we only ever index into this array.
+//
+// Index 9 (source column J) was long treated as an empty spacer and dropped
+// under the name `blank1`. It isn't empty: it's a sparse (~6%) but
+// collector-relevant "pressing" note — "reissue", "pre" (pre-release), and the
+// like — that the compiler asked to surface, so it's now a real field.
 export const CSV_FIELDS = [
   "artist",
   "artist_credit",
@@ -25,7 +29,7 @@ export const CSV_FIELDS = [
   "label",
   "country",
   "format",
-  "blank1",
+  "pressing",
   "producer",
   "year",
   "riddim",
@@ -42,7 +46,9 @@ export const CSV_FIELDS = [
   "additions",
 ] as const;
 
-const INSERT_COLUMNS = CSV_FIELDS.filter((f) => f !== "blank1");
+// Every parsed field is now a real column (the former `blank1` spacer became
+// `pressing`), so all of CSV_FIELDS is inserted.
+const INSERT_COLUMNS = [...CSV_FIELDS];
 const FTS_COLUMNS = ["title", "title_credit", "artist", "artist_credit", "notes"] as const;
 
 // Source expression for each CATALOG_FTS_COLUMNS entry, evaluated against

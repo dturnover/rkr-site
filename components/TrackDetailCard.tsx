@@ -56,6 +56,21 @@ function capitalizeFirst(value: string | null): string | null {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+// Title Credit is only carried in the data when it differs from the Title
+// (the compiler's convention). Artist Credit isn't compiled that way — it's
+// frequently just a duplicate of the Artist — so suppress it here when it says
+// nothing new, matching the Title behaviour. Compared case/space-insensitively
+// so "Studio One " and "studio one" count as the same.
+function creditIfDifferent(
+  value: string | null | undefined,
+  from: string | null | undefined
+): string | null {
+  if (!value) return null;
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  if (from && norm(value) === norm(from)) return null;
+  return value;
+}
+
 export default function TrackDetailCard({ record }: { record: RecordDetail }) {
   const showBSide = hasBSide(record);
 
@@ -71,10 +86,14 @@ export default function TrackDetailCard({ record }: { record: RecordDetail }) {
         </h3>
         <dl>
           <Field label="Artist" value={record.artist} facet="artists" />
-          <Field label="Artist Credit" value={record.artist_credit} />
+          <Field label="Artist Credit" value={creditIfDifferent(record.artist_credit, record.artist)} />
           <Field label="Country" value={record.country} facet="countries" />
           <Field label="Year Released" value={record.year} facet="years" />
           <Field label="Format" value={record.format} facet="formats" />
+          {/* "Pressing" (source column J) — a sparse but collector-relevant
+              note on the release: original vs. "reissue", "pre" (pre-release),
+              etc. Previously dropped on import as an empty spacer. */}
+          <Field label="Pressing" value={record.pressing} />
           <Field label="Label" value={record.label} facet="labels" />
           <Field label="Label No." value={record.label_number} mono />
           <Field label="Matrix No." value={record.matrix_number} mono />
@@ -102,7 +121,10 @@ export default function TrackDetailCard({ record }: { record: RecordDetail }) {
           </h3>
           <dl>
             <Field label="Artist" value={record.b_side_artist} facet="artists" />
-            <Field label="Artist Credit" value={record.b_side_artist_credit} />
+            <Field
+              label="Artist Credit"
+              value={creditIfDifferent(record.b_side_artist_credit, record.b_side_artist)}
+            />
             <Field label="Label No." value={record.b_side_label_number} mono />
             <Field label="Matrix No." value={record.b_side_matrix_number} mono />
           </dl>

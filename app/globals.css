@@ -43,6 +43,10 @@ body {
   background-color: var(--parchment-bg);
   color: var(--ink-brown);
   font-family: var(--font-body);
+  /* A hair heavier than the 400 default — enough to give the delicate
+     Garamond body copy a touch more presence on the parchment without
+     reading as "bold". Relies on the variable font loaded in layout.tsx. */
+  font-weight: 460;
   background-image:
     radial-gradient(ellipse 60% 40% at 15% 10%, rgba(198, 168, 119, 0.35), transparent 60%),
     radial-gradient(ellipse 50% 35% at 90% 80%, rgba(198, 168, 119, 0.3), transparent 60%),

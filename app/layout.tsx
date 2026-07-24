@@ -12,10 +12,13 @@ const cinzel = Cinzel({
   weight: ["400", "600"],
 });
 
+// Loaded as a variable font (no fixed `weight` list) so the body copy can use
+// an intermediate weight — see `body { font-weight }` in globals.css. With the
+// old static 400/500/600 instances, any in-between value would just snap back
+// to one of them.
 const garamond = EB_Garamond({
   variable: "--font-garamond",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
 });
 
 const courierPrime = Courier_Prime({
