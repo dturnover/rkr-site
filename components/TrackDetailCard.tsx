@@ -90,10 +90,12 @@ export default function TrackDetailCard({ record }: { record: RecordDetail }) {
           <Field label="Country" value={record.country} facet="countries" />
           <Field label="Year Released" value={record.year} facet="years" />
           <Field label="Format" value={record.format} facet="formats" />
-          {/* "Pressing" (source column J) — a sparse but collector-relevant
+          {/* "Issue Notes" (source column J) — a sparse but collector-relevant
               note on the release: original vs. "reissue", "pre" (pre-release),
-              etc. Previously dropped on import as an empty spacer. */}
-          <Field label="Pressing" value={record.pressing} />
+              etc. Previously dropped on import as an empty spacer. Kept off the
+              search-results table by request; shown only on the listing. The
+              underlying column is still named `pressing`. */}
+          <Field label="Issue Notes" value={record.pressing} />
           <Field label="Label" value={record.label} facet="labels" />
           <Field label="Label No." value={record.label_number} mono />
           <Field label="Matrix No." value={record.matrix_number} mono />
