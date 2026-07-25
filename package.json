@@ -16,9 +16,14 @@
     "csv-parse": "^7.0.1",
     "drizzle-orm": "^0.45.2",
     "iconv-lite": "^0.7.3",
-    "next": "16.2.10",
+    "next": "16.2.12",
     "react": "19.2.4",
     "react-dom": "19.2.4"
+  },
+  "//overrides": "Force patched transitive deps that Next's pins inherit: sharp (libvips CVEs GHSA-f88m-g3jw-g9cj; only used to optimize our own static logo) and postcss (XSS/path-traversal GHSA-qx2v-qp2m-jg93 etc.; only processes our own first-party CSS at build time). Both are build-time-only here, so the bumps are safe.",
+  "overrides": {
+    "sharp": "^0.35.0",
+    "postcss": "^8.5.23"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -26,7 +31,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.2.12",
     "tailwindcss": "^4",
     "tsx": "^4.23.0",
     "typescript": "^5"
