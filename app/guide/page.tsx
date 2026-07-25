@@ -2,204 +2,192 @@ import type { Metadata } from "next";
 import ProsePage from "@/components/ProsePage";
 
 export const metadata: Metadata = {
-  title: "User's Guide — Roots Knotty Roots",
+  title: "Using Roots Knotty Roots — User's Guide",
   description:
-    "How to read a Roots Knotty Roots listing: artist, title, matrix and label numbers, format, country, producer, date, riddim, origin, notes, genre, and B-side information.",
+    "How to use Roots Knotty Roots: searching by artist, title, matrix and label numbers, label, format, country, producer, date, riddim, origin, genre and B-side, plus sorting and browsing.",
 };
+
+// A small illustrative block (e.g. Artist / Artist Credit) rendered as a
+// labelled example beside the prose. Sits on the parchment tone so it reads as
+// a callout rather than body copy.
+function Example({ rows }: { rows: [string, string][] }) {
+  return (
+    <div className="frame-double bg-parchment/50 px-4 py-3 my-4 font-body text-sm">
+      <dl className="space-y-1">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex flex-col sm:flex-row sm:gap-2">
+            <dt className="uppercase text-xs tracking-wide text-ink-soft sm:w-40 shrink-0 pt-0.5">
+              {label}
+            </dt>
+            <dd className="text-ink">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 
 export default function GuidePage() {
   return (
-    <ProsePage title="User's Guide">
+    <ProsePage title="Using Roots Knotty Roots">
       <p>
-        RKR obsessively documents singles released from 1952 through 1999, a time when
-        the 45 was far and away Jamaica&rsquo;s most popular musical format. Its listings
-        approximate 99% of the records from the golden era of Jamaican recordings, hence
-        the information contained in RKR is also the real story of Jamaican music. Although
-        RKR has evolved into a comprehensive historical document, it continues to exist
-        mainly as a tool for record collectors, selectors, and fans. We use as our
-        perspective that single record that you are holding in your hand, playing, or
-        checking out online.
-      </p>
-      <p>
-        Our aim is to give as much information as possible about this record, whether
-        it&rsquo;s explicitly given on the label or inferred through our detective work.
-        This information breaks down into the following categories:
+        Roots Knotty Roots documents more than 135,000 Jamaican singles released
+        between 1950 and 1999. It is designed as a practical research tool for
+        collectors, selectors, dealers, historians, and fans. Each listing combines
+        information gleaned from record labels, matrix numbers, interviews,
+        publications, and decades of original research. Every entry is built around
+        the individual record you are holding in your hand, playing on a turntable,
+        or viewing online.
       </p>
 
-      <h2>Artist</h2>
+      <h2>Quick Start</h2>
+      <ul className="space-y-1 list-none pl-0">
+        <li>
+          <strong>Search</strong> &mdash; Find exactly the record you&rsquo;re looking for.
+        </li>
+        <li>
+          <strong>Sort</strong> &mdash; Rearrange results by any category.
+        </li>
+        <li>
+          <strong>Browse</strong> &mdash; Explore artists, labels, producers, riddims,
+          genres and more.
+        </li>
+      </ul>
+
+      <h2>Search</h2>
       <p>
-        Correct artist identification is often tricky. Thousands of records were released
-        only on blank labels, and although artists have been identified on most of these, a
-        substantial number remain unidentified. Then there are the hundreds of miscredits,
-        intentional and unintentional, as well as a large number of misspellings.
-        Furthermore, many artists recorded under different names — for example, Max Romeo
-        used at least 10 different aliases during his long recording career.
-      </p>
-      <p>For purposes of clarity we have employed a &ldquo;dual&rdquo; artist identification:</p>
-      <p>
-        1) The artist&rsquo;s real name, that is, the one most generally recognized. Thus
-        Slim Smith not Keith Smith, Eek A Mouse not Ripton Hylton, etc.
-      </p>
-      <p>
-        2) The literal label attribution. Thus the listing for &ldquo;Rule the Nation&rdquo;
-        will credit U Roy as above, but will also show &ldquo;Hugh Roy with Tommy McCook
-        and The Supersonics&rdquo;.
+        Search is RKR&rsquo;s most powerful feature. Every record can be searched
+        across the categories below. Advanced Search allows multiple categories to be
+        combined to answer more specific questions.
       </p>
 
-      <h2>Title</h2>
+      <h3>Artist</h3>
       <p>
-        Again, correct identification is not always straightforward. Although most of the
-        titles listed on original Jamaican labels are correct, the names tended to mutate
-        over subsequent releases. This was particularly true for titles issued abroad. For
-        example, the same Clancy Eccles record was released four times (in two countries)
-        with three different titles: Africa, We A Black Man, We Want Go Home. Another
-        example of mutation: The Soulettes&rsquo; Time To Turn is also known as Time For
-        Everything, the title given on the subsequent Studio 1 compilation Jamaica All
-        Stars. We try to list all such title variants, with the original appearing first and
-        subsequent names listed parenthetically. Occasionally you will see titles written in
-        lower case; these are generally speculations about blank label releases.
+        Correctly identifying artists is often challenging. There are many miscredits,
+        misspellings, and aliases. Max Romeo, for example, used at least ten different
+        recording names during his career. Adding to the confusion, thousands of
+        Jamaican singles were issued on pre-release blank labels.
+      </p>
+      <p>RKR identifies artists in two ways:</p>
+      <p>
+        <strong>Artist.</strong> The best known, generally accepted name.
+        <br />
+        <strong>Artist Credit.</strong> The name that appears on the record label.
+      </p>
+      <Example
+        rows={[
+          ["Artist", "U Roy"],
+          ["Artist Credit", "Hugh Roy with Tommy McCook and The Supersonics"],
+        ]}
+      />
+
+      <h3>Title</h3>
+      <p>
+        Similar confusion occurs around titles. Although most original Jamaican labels
+        carried the correct title, names often changed during subsequent reissues,
+        especially those released overseas. So RKR shows both the &ldquo;real&rdquo;
+        title and the exact wording printed on an individual label. A funny example of
+        this is a Prince Buster tune that came out with a different title when released
+        in the UK:
+      </p>
+      <Example
+        rows={[
+          ["Title", "She Pon Top"],
+          ["Title Credit", "Sheep On Top"],
+        ]}
+      />
+
+      <h3>Matrix Number</h3>
+      <p>
+        The combination of letters and numbers etched into a record&rsquo;s run-out
+        groove is, with very few exceptions, unique to each individual recording.
+        Matrix numbers are so reliable that they serve as the foundation and basic
+        organizing principle of this entire database.
+      </p>
+      <Example rows={[["Typical Matrix", "WIRL PB 3655 LGA"]]} />
+      <p>
+        <strong>Prefix</strong> &mdash; Studio, pressing plant, producer, or company
+        responsible for creating the matrix.
+        <br />
+        <strong>Sequence Number</strong> &mdash; Unique recording number within the
+        matrix series; often the best dating clue.
+        <br />
+        <strong>Suffix</strong> &mdash; Later mastering or manufacturing information.
       </p>
 
-      <h2>Matrix Number</h2>
+      <h3>Label Number</h3>
       <p>
-        The combination of letters and numbers etched into the run-out groove is, with few
-        exceptions, unique to each individual recording. Matrix numbers are so reliable that
-        we essentially anchor each listing around them. Over the years, as we&rsquo;ve added
-        these numbers, we have concomitantly been able to purge most of our redundant and
-        superfluous information.
-      </p>
-      <p>
-        Although there are many variations, the matrix frequently identifies the pressing
-        plant and the producer, along with a number. For example, Melody Life by Marcia
-        Griffiths, imprinted Wirl CD 4310, was pressed at West Indies Records Ltd. (WIRL)
-        for Coxsone Dodd (CD). The combination of letters and numbers places the song in
-        series with a number of classic Dodd recordings from 1968, including Larry &amp;
-        Alvin&rsquo;s Nanny Goat (Wirl CD 4398) and the Cables&rsquo; Baby Why (Wirl CD
-        4349). It&rsquo;s easy to deride record collectors and their obsessions with
-        minutiae, but in fact the matrix number is often the only tangible data that locates
-        a piece of music to its specific time and place.
+        The label number is generally of secondary importance on Jamaican releases but
+        serves as the primary identifier on many British, American, and other overseas
+        issues.
       </p>
 
-      <h2>Label Number</h2>
+      <h3>Label</h3>
       <p>
-        The label number is usually of secondary importance in Jamaican music, but the
-        primary identifier in UK, US, and other &ldquo;foreign&rdquo; issues. Usually the
-        label number corresponds to the matrix number; where exceptions exist, these are
-        noted.
+        Usually there was only one label associated with a particular matrix number.
+        Popular recordings, however, often appeared on multiple labels, especially on
+        later re-issues. All blank label pressings are identified as &ldquo;pre&rdquo;
+        (for pre-release).
       </p>
 
-      <h2>Label</h2>
+      <h3>Format</h3>
+      <p>7-inch singles, plus 10-inch, 12-inch, 78 rpm records, and EPs.</p>
+
+      <h3>Country</h3>
       <p>
-        This is fairly obvious, as usually there was one label per matrix number. But popular
-        records often came out on multiple labels, particularly from big producers like
-        Coxsone Dodd. If there was a single uniting matrix number, these would appear on the
-        same line, as in Coxsone/Studio 1 or Randy&rsquo;s/Impact. Other label information:
-        blanks are listed as &ldquo;pre&rdquo;; later pressings are noted as
-        &ldquo;reissue&rdquo;.
+        This refers to where a particular record was released, not necessarily where it
+        was recorded. The general idea is to document records from the Jamaican
+        community at home and abroad, but with its international popularity we now
+        display releases from more than 60 countries.
       </p>
 
-      <h2>Format</h2>
+      <h3>Producer</h3>
       <p>
-        We list tens of thousands of 7&Prime; singles, along with 12&Prime;, 10&Prime;, 78
-        RPM records, and EPs (multi-track singles).
+        This generally refers to the person who financed the recording and pressing
+        process, not the person running the session.
       </p>
 
-      <h2>Country</h2>
+      <h3>Date</h3>
       <p>
-        Refers to the country where a particular record was released (not recorded).
-        Originally we aimed only to trace Jamaican productions. But as the Jamaican community
-        dispersed abroad, so did Jamaican artists, many of whom made records in Jamaica,
-        North America, and the U.K. And even in the earliest times a lot of Jamaican music
-        has been made by people who were not born in Jamaica.
-      </p>
-      <p>
-        The question has always been where to draw the line. In the end we decided to
-        document all music made by and for the Jamaican community. This definition eliminates
-        a lot of music done in &ldquo;Jamaican&rdquo; style, like reggae music made in
-        Africa, Two Tone music and other revivals, pop adaptations and imitations, and most
-        other Caribbean singles. But even within our narrower definition RKR contains
-        listings from more than 20 countries.
+        Refers to the year of release. Dates not found on the record must be identified
+        by using other label information such as telephone numbers, addresses and
+        printing techniques as well as matrix numbers and contemporary music charts.
       </p>
 
-      <h2>Producer</h2>
+      <h3>Riddim</h3>
       <p>
-        Production credits became standardized through the years, but there are many obscure
-        figures associated with early recordings. Some of the credits given here are at best
-        educated guesses, particularly with regard to blanks.
+        With over 53,000 listings, RKR is at least as comprehensive as any other online
+        riddim reference site, while providing much more historical context.
       </p>
 
-      <h2>Date</h2>
+      <h3>Origin</h3>
       <p>
-        This is another ambiguous area. Many Jamaican records were done quickly — the year
-        on a label usually references the time of recording, pressing, and release. But there
-        could be considerable delay between any of these steps, and of course further passage
-        of time when a recording traveled abroad. Matrix numbers are often quite useful but
-        still fallible when determining a date for records without label information. A
-        general rule of thumb is that a given date should be read as plus/minus one year. The
-        main reason we try to assign a date to every listing is to give a general indication
-        of musical style.
+        Jamaican artists were heavily influenced by music from abroad; this has resulted
+        in our listing of over 15,000 cover tunes. We try to fully identify the original
+        artist, title and date of issue.
       </p>
 
-      <h2>Riddim</h2>
+      <h3>Genre</h3>
       <p>
-        If you know Jamaican music, you already know what a riddim is. There are already some
-        great websites that identify riddims, and they do a particularly good job with the
-        many lickovers done in the digital era. Our listings are probably stronger in our
-        coverage of older music and some of the more obscure riddims.
+        Jamaica was not just the land of ska, rocksteady and reggae. RKR listings
+        identify over 30 distinct genres.
       </p>
 
-      <h2>Origin</h2>
+      <h3>B-Side Information</h3>
+      <p>Identifies the B-side and whether it is a version whenever possible.</p>
+
+      <h2>Sort</h2>
       <p>
-        This section owes a lot to Peter Piper&rsquo;s excellent website{" "}
-        <a href="http://www.skaville.de" target="_blank" rel="noopener noreferrer">
-          Skaville: Cover Versions In Jamaican 60s Music
-        </a>
-        , which organized for the first time a topic much discussed by aficionados over the
-        years: where did that song come from? That site remains in many ways the last word on
-        this subject, although we have done a lot of independent research and hopefully have
-        expanded these musical origins somewhat, particularly with regard to Jamaican music
-        from later eras.
+        For any search result you can click any column heading to instantly rearrange
+        results chronologically or by producer, label, country, matrix number, genre,
+        or other category.
       </p>
 
-      <h2>Notes</h2>
+      <h2>Browse</h2>
       <p>
-        We try to include a variety of miscellaneous information when possible, such as studio
-        musicians and recording information (engineers, mixers, arrangers). Some of this info
-        comes from labels, some from artist interviews.
-      </p>
-      <p>
-        You will also occasionally see <em>dubious entry</em>, referring mostly to missing JA
-        issues which have been released as singles abroad. Many dubious entries are phantoms,
-        and we would appreciate help from anyone who actually owns any of these titles.
-      </p>
-
-      <h2>Genre</h2>
-      <p>
-        Jamaican music is much more than ska, rocksteady, and reggae. Particularly in the 60s
-        there was an active market for ballads, spirituals, and traditional musics, as well as
-        recordings done in various soul and pop styles. Some of our designations are somewhat
-        arbitrary — for example we use the term blue beat to designate proto-ska, and
-        dancehall is used for tunes that largely employ &ldquo;digital&rdquo; instrumentation.
-        The purpose of this category is in part to help a buyer know what they&rsquo;re
-        getting.
-      </p>
-
-      <h2>B-Side Information</h2>
-      <p>
-        Each RKR entry identifies the music on the B side. Up until 1970 Jamaican singles were
-        two-siders, with different tunes on the A and B sides. There could be lots of
-        variability; for now we have not tried to document all pairings, and the listing is
-        limited to what was found on the original release (whenever possible).
-      </p>
-      <p>
-        After 1970 singles were increasingly released with instrumental versions on the B
-        side. We list as much information about the version sides as we can. You will see the
-        question <em>Is the B Side A Version?</em>, which might seem odd but is particularly of
-        interest to selectors. Sometimes it&rsquo;s helpful to be able to answer this question
-        — for example, Road Block by Bob Marley and the Wailers lists as its B side Rebel
-        Music, but this is a version side, not a different Marley vocal. Listing these versions
-        also gives us an opportunity to credit the many studio bands which were the backbone of
-        all this music.
+        I don&rsquo;t think there will ever be another edition of RKR in book form, but
+        the Browse function comes close. The Browse buttons allow you to read all
+        categories in alphabetical order.
       </p>
     </ProsePage>
   );

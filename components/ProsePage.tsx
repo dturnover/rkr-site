@@ -13,7 +13,7 @@ export default function ProsePage({
       {intro ? (
         <p className="font-body text-ink-soft italic text-center mb-8">{intro}</p>
       ) : null}
-      <div className="font-body text-ink leading-relaxed space-y-4 [&_h2]:font-display [&_h2]:text-2xl [&_h2]:text-rasta-red [&_h2]:mt-8 [&_h2]:mb-2 [&_a]:text-link [&_a:hover]:text-rasta-red">
+      <div className="font-body text-ink leading-relaxed space-y-4 [&_h2]:font-display [&_h2]:text-2xl [&_h2]:text-rasta-red [&_h2]:mt-8 [&_h2]:mb-2 [&_h3]:font-display [&_h3]:text-lg [&_h3]:text-ink [&_h3]:mt-6 [&_h3]:mb-1 [&_a]:text-link [&_a:hover]:text-rasta-red">
         {children}
       </div>
     </div>
