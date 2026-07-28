@@ -44,6 +44,16 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Headings use Cinzel via `.font-display` (a Tailwind utility that sets only
+   the font-family, not a weight), so without this rule they inherit the
+   body's 460 weight — and since Cinzel is a delicate engraved capital that
+   also rounds 460 down to its 400 instance, headings ended up rendering
+   *lighter* than the chunky Consolas body copy. Pin them to 700 (loaded in
+   layout.tsx) so headings clearly out-weigh the surrounding text. */
+.font-display {
+  font-weight: 700;
+}
+
 body {
   background-color: var(--parchment-bg);
   color: var(--ink-brown);

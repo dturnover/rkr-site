@@ -9,7 +9,7 @@ import { getSession } from "@/lib/auth/requireAdmin";
 const cinzel = Cinzel({
   variable: "--font-cinzel",
   subsets: ["latin"],
-  weight: ["400", "600"],
+  weight: ["400", "600", "700"],
 });
 
 // Loaded as a variable font (no fixed `weight` list) so the body copy can use
