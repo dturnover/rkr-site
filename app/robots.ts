@@ -1,4 +1,11 @@
 import type { MetadataRoute } from "next";
+import { sitemapChunkCount } from "@/lib/seo";
+import { SITE_URL } from "@/lib/siteUrl";
+
+// Cache the generated robots.txt for a day. It reads the catalogue size to
+// list the child sitemaps (below), and crawlers refetch robots.txt rarely, so
+// there's no reason to recompute it per request.
+export const revalidate = 86400;
 
 // Crawlers that collect pages to train generative AI models, or to fetch
 // source material at answer time so an assistant can reply without sending
@@ -226,7 +233,13 @@ const AI_CRAWLERS = [
 // which is what actually keeps them out of search results if a URL leaks.
 const PRIVATE_PATHS = ["/admin", "/api/", "/mod-log", "/records/new"];
 
-export default function robots(): MetadataRoute.Robots {
+export default async function robots(): Promise<MetadataRoute.Robots> {
+  // generateSitemaps() emits child sitemaps at /sitemap/0.xml, /sitemap/1.xml,
+  // … and this Next version does NOT serve a combined /sitemap.xml index
+  // (confirmed: it 404s), so list every child sitemap explicitly.
+  const chunks = await sitemapChunkCount();
+  const sitemaps = Array.from({ length: chunks }, (_, i) => `${SITE_URL}/sitemap/${i}.xml`);
+
   return {
     rules: [
       // Everything not named below — Googlebot, Bingbot, DuckDuckBot,
@@ -244,5 +257,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: "/",
       },
     ],
+    sitemap: sitemaps,
   };
 }

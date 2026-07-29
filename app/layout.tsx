@@ -5,6 +5,7 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteSidebar from "@/components/SiteSidebar";
 import SiteFooter from "@/components/SiteFooter";
 import { getSession } from "@/lib/auth/requireAdmin";
+import { SITE_URL } from "@/lib/siteUrl";
 
 const cinzel = Cinzel({
   variable: "--font-cinzel",
@@ -27,10 +28,32 @@ const courierPrime = Courier_Prime({
   weight: ["400", "700"],
 });
 
+const SITE_TITLE = "Roots Knotty Roots — The Discography of Jamaican Music";
+const SITE_DESCRIPTION =
+  "A free, searchable discography of Jamaican music — ska, rocksteady, reggae, dancehall and more. Compiled by Michael Turner & Robert Schoenfeld.";
+
 export const metadata: Metadata = {
-  title: "Roots Knotty Roots — The Discography of Jamaican Music",
-  description:
-    "A free, searchable discography of Jamaican music — ska, rocksteady, reggae, dancehall and more. Compiled by Michael Turner & Robert Schoenfeld.",
+  // Lets URL-based metadata below (and the file-based OG/Twitter images) resolve
+  // to absolute URLs. Sourced from the deployment — see lib/siteUrl.ts.
+  metadataBase: new URL(SITE_URL),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  applicationName: "Roots Knotty Roots",
+  // The og:image / twitter:image tags are added automatically from
+  // app/opengraph-image.tsx and app/twitter-image.tsx.
+  openGraph: {
+    type: "website",
+    siteName: "Roots Knotty Roots",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: "/",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export default async function RootLayout({
