@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Cinzel, EB_Garamond, Courier_Prime } from "next/font/google";
+import { Cinzel, EB_Garamond, Courier_Prime, Inconsolata } from "next/font/google";
 import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteSidebar from "@/components/SiteSidebar";
@@ -26,6 +26,17 @@ const courierPrime = Courier_Prime({
   variable: "--font-courier-prime",
   subsets: ["latin"],
   weight: ["400", "700"],
+});
+
+// Body copy. A humanist monospace designed as a webfont alternative to
+// Consolas — self-hosted by next/font, so every visitor sees the identical
+// face rather than falling back to whatever mono their device happens to
+// have (iOS/Android/macOS never had Consolas). Loaded as a variable font (no
+// fixed `weight` list) so `body { font-weight: 460 }` in globals.css lands on
+// a true intermediate weight instead of snapping to 400.
+const inconsolata = Inconsolata({
+  variable: "--font-inconsolata",
+  subsets: ["latin"],
 });
 
 const SITE_TITLE = "Roots Knotty Roots — The Discography of Jamaican Music";
@@ -66,7 +77,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${cinzel.variable} ${garamond.variable} ${courierPrime.variable} h-full antialiased`}
+      className={`${cinzel.variable} ${garamond.variable} ${courierPrime.variable} ${inconsolata.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <SiteHeader />

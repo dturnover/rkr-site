@@ -31,12 +31,14 @@
   --color-error: var(--error-red);
 
   --font-display: var(--font-cinzel), Georgia, "Times New Roman", serif;
-  /* EXPERIMENT: trying Consolas for the body text (requested). Consolas is a
-     Windows/Office system font, not a licensable webfont, so it renders for
-     visitors who have it installed and falls back to a system monospace for
-     everyone else. To revert, restore:
+  /* Body copy: Inconsolata (loaded in layout.tsx) — a self-hosted humanist
+     monospace chosen as a webfont stand-in for Consolas, so every visitor sees
+     the same face regardless of platform. Consolas stays as the first fallback
+     for the split-second before the webfont loads on Windows; the rest is a
+     generic monospace stack for the fallback of last resort. To go back to the
+     original serif body, restore:
        --font-body: var(--font-garamond), Georgia, "Times New Roman", serif; */
-  --font-body: Consolas, ui-monospace, "SFMono-Regular", Menlo, "DejaVu Sans Mono", "Courier New", monospace;
+  --font-body: var(--font-inconsolata), Consolas, ui-monospace, "SFMono-Regular", Menlo, "DejaVu Sans Mono", "Courier New", monospace;
   --font-catalog: var(--font-courier-prime), "Courier New", monospace;
 }
 
