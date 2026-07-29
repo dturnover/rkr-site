@@ -48,6 +48,14 @@ function Field({
   );
 }
 
+// A record's title links to a search for every other listing sharing it —
+// e.g. every pressing/version of "Lean On Me". The `title` search field matches
+// both A-side and B-side titles (see FIELD_TO_FTS_COLUMNS in queries/search.ts),
+// so this works from either side.
+function titleSearchHref(title: string): string {
+  return `/search?field=title&q=${encodeURIComponent(title)}`;
+}
+
 // The source data stores Version as a raw lowercase "yes"/etc., unlike every
 // other field which is already proper-cased ("Ska", "JA") — rendered as-is
 // it reads like an unformatted database dump leaking through.
@@ -79,7 +87,13 @@ export default function TrackDetailCard({ record }: { record: RecordDetail }) {
       <section className="frame-double bg-paper p-5 sm:p-7">
         <h2 className="font-display text-xl text-rasta-red mb-1">A-Side</h2>
         <h3 className="font-body text-2xl text-ink mb-4">
-          {record.title || "Untitled"}
+          {record.title ? (
+            <Link href={titleSearchHref(record.title)} className="hover:text-rasta-red hover:underline">
+              {record.title}
+            </Link>
+          ) : (
+            "Untitled"
+          )}
           {record.title_credit ? (
             <span className="text-ink-soft italic text-base"> ({record.title_credit})</span>
           ) : null}
@@ -116,7 +130,13 @@ export default function TrackDetailCard({ record }: { record: RecordDetail }) {
         <section className="frame-double bg-paper p-5 sm:p-7">
           <h2 className="font-display text-xl text-rasta-green mb-1">B-Side</h2>
           <h3 className="font-body text-2xl text-ink mb-4">
-            {record.b_side_title || "Untitled"}
+            {record.b_side_title ? (
+              <Link href={titleSearchHref(record.b_side_title)} className="hover:text-rasta-red hover:underline">
+                {record.b_side_title}
+              </Link>
+            ) : (
+              "Untitled"
+            )}
             {record.b_side_title_credit ? (
               <span className="text-ink-soft italic text-base"> ({record.b_side_title_credit})</span>
             ) : null}
