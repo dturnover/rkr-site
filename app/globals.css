@@ -31,14 +31,15 @@
   --color-error: var(--error-red);
 
   --font-display: var(--font-cinzel), Georgia, "Times New Roman", serif;
-  /* Body copy: Inconsolata (loaded in layout.tsx) — a self-hosted humanist
-     monospace chosen as a webfont stand-in for Consolas, so every visitor sees
-     the same face regardless of platform. Consolas stays as the first fallback
-     for the split-second before the webfont loads on Windows; the rest is a
-     generic monospace stack for the fallback of last resort. To go back to the
-     original serif body, restore:
+  /* Body copy: Courier Prime (loaded in layout.tsx) — a refined typewriter
+     face for a classic, liner-notes feel. Self-hosted, so every visitor sees
+     the same font. It ships in Regular (400) and Bold (700) only, no
+     intermediate weights, so the body sits at 400 and bold labels/headings
+     provide the contrast (see `body { font-weight }`). It's also the
+     --font-catalog face, so catalogue numbers now share the body's look.
+     To go back to the original serif body, restore:
        --font-body: var(--font-garamond), Georgia, "Times New Roman", serif; */
-  --font-body: var(--font-inconsolata), Consolas, ui-monospace, "SFMono-Regular", Menlo, "DejaVu Sans Mono", "Courier New", monospace;
+  --font-body: var(--font-courier-prime), "Courier New", ui-monospace, Menlo, monospace;
   --font-catalog: var(--font-courier-prime), "Courier New", monospace;
 }
 
@@ -60,10 +61,10 @@ body {
   background-color: var(--parchment-bg);
   color: var(--ink-brown);
   font-family: var(--font-body);
-  /* Heavier than the 400 default so the Inconsolata body copy has real
-     presence on the parchment. Relies on the variable font loaded in
-     layout.tsx, which renders any intermediate weight exactly. */
-  font-weight: 540;
+  /* Courier Prime's regular weight. It has no intermediate weights, so this
+     stays at 400 and its 700 Bold is reserved for <strong>, labels and
+     headings — keeping normal vs. emphasised text distinguishable. */
+  font-weight: 400;
   background-image:
     radial-gradient(ellipse 60% 40% at 15% 10%, rgba(198, 168, 119, 0.35), transparent 60%),
     radial-gradient(ellipse 50% 35% at 90% 80%, rgba(198, 168, 119, 0.3), transparent 60%),
