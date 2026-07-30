@@ -4,6 +4,7 @@ import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteSidebar from "@/components/SiteSidebar";
 import SiteFooter from "@/components/SiteFooter";
+import HomeMobileSearch from "@/components/HomeMobileSearch";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { SITE_URL } from "@/lib/siteUrl";
 
@@ -90,6 +91,9 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <SiteHeader />
+        {/* Mobile-only, home-only: puts the search panel above the browse nav
+            on phones without touching the desktop layout. */}
+        <HomeMobileSearch />
         <div className="flex-1 w-full flex flex-col lg:flex-row lg:items-start px-3 sm:px-4 lg:px-6 py-6 gap-4 lg:gap-6">
           <SiteSidebar isEditor={!!session} isAdmin={session?.role === "admin"} />
           <main className="flex-1 min-w-0 w-full">{children}</main>

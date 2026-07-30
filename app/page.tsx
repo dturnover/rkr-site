@@ -30,8 +30,10 @@ export default async function Home() {
     <div className="space-y-10 max-w-4xl mx-auto">
       {/* Search is the whole point of the site, so it leads the page rather
           than sitting only in the header. The header's compact search hides
-          itself on "/" (see HeaderSearchForm) so this isn't a duplicate. */}
-      <section className="frame-double bg-paper px-4 sm:px-6 py-5">
+          itself on "/" (see HeaderSearchForm) so this isn't a duplicate.
+          Hidden on mobile — phones get the same panel above the browse nav via
+          HomeMobileSearch (in the layout), so search leads on small screens. */}
+      <section className="hidden lg:block frame-double bg-paper px-4 sm:px-6 py-5">
         <h2 className="font-display text-xl sm:text-2xl text-center text-ink mb-4">
           Search the RKR Database
         </h2>
@@ -50,7 +52,7 @@ export default async function Home() {
 
       <Link
         href="/advanced-search"
-        className="frame-double bg-parchment-deep/40 hover:bg-parchment-deep/70 transition-colors flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-4 -mt-4"
+        className="frame-double bg-parchment-deep/40 hover:bg-parchment-deep/70 transition-colors flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-4 lg:-mt-4"
       >
         <span className="font-display text-base sm:text-xl text-ink">Advanced Search</span>
         <span className="font-body text-sm text-ink-soft hidden sm:inline">
