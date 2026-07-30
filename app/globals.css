@@ -48,20 +48,18 @@ html {
 }
 
 /* `.font-display` (a Tailwind utility) sets only the font-family, so pin the
-   weight here. Oswald is condensed, so a semibold reads as a strong heading
-   without turning into a heavy block. */
+   weight here. Bold Oswald gives headings a strong, poster-like presence. */
 .font-display {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 body {
   background-color: var(--parchment-bg);
   color: var(--ink-brown);
   font-family: var(--font-body);
-  /* Zilla Slab at medium weight — a slab serif carries more ink than a mono,
-     so 500 reads solid on the parchment while leaving 700 clearly bolder for
-     <strong> and labels. */
-  font-weight: 500;
+  /* Zilla Slab, a touch heavier than medium so the body has real weight on the
+     parchment, with 700 still reserved for <strong> and labels. */
+  font-weight: 600;
   background-image:
     radial-gradient(ellipse 60% 40% at 15% 10%, rgba(198, 168, 119, 0.35), transparent 60%),
     radial-gradient(ellipse 50% 35% at 90% 80%, rgba(198, 168, 119, 0.3), transparent 60%),

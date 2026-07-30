@@ -4,9 +4,9 @@
 // exact same heading/link treatment.
 // The `[&_h2]:font-display` variants set only the heading font-FAMILY (Oswald),
 // so pin an explicit weight here to match the class-based `.font-display`
-// headings elsewhere (semibold — see globals.css).
+// headings elsewhere (bold — see globals.css).
 export const PROSE_CLASS =
-  "font-body text-ink leading-relaxed space-y-4 [&_h2]:font-display [&_h2]:font-semibold [&_h2]:text-3xl [&_h2]:text-rasta-red [&_h2]:mt-8 [&_h2]:mb-2 [&_h3]:font-display [&_h3]:font-semibold [&_h3]:text-xl [&_h3]:text-ink [&_h3]:mt-6 [&_h3]:mb-1 [&_a]:text-link [&_a:hover]:text-rasta-red";
+  "font-body text-ink leading-relaxed space-y-4 [&_h2]:font-display [&_h2]:font-bold [&_h2]:text-3xl [&_h2]:text-rasta-red [&_h2]:mt-8 [&_h2]:mb-2 [&_h3]:font-display [&_h3]:font-bold [&_h3]:text-xl [&_h3]:text-ink [&_h3]:mt-6 [&_h3]:mb-1 [&_a]:text-link [&_a:hover]:text-rasta-red";
 
 export default function ProsePage({
   title,
