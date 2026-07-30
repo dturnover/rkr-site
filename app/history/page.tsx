@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import ProsePage from "@/components/ProsePage";
 
 export const metadata: Metadata = {
-  title: "History of RKR — Roots Knotty Roots",
+  title: "Acknowledgements — Roots Knotty Roots",
   description:
-    "The history of Roots Knotty Roots and an acknowledgement of the many collectors and contributors who helped build the discography.",
+    "Acknowledgements for Roots Knotty Roots — the many collectors and contributors who helped build the discography.",
 };
 
 const CONTRIBUTORS = [
@@ -45,7 +45,7 @@ const CONTRIBUTORS = [
 
 export default function HistoryPage() {
   return (
-    <ProsePage title="History of Roots Knotty Roots">
+    <ProsePage title="Acknowledgements">
       <p>
         Now in its fourth decade, Roots Knotty Roots is a research collaboration that began in
         book form and now exists as an online, comprehensive, and precise discography of

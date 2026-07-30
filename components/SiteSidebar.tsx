@@ -6,7 +6,7 @@ import { FACET_ORDER, FACETS } from "@/lib/facetConfig";
 
 const ABOUT_LINKS: { href: string; label: string }[] = [
   { href: "/guide", label: "User's Guide" },
-  { href: "/history", label: "History of RKR" },
+  { href: "/history", label: "Acknowledgements" },
   { href: "/interviews", label: "Interviews & Features" },
 ];
 

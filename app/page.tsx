@@ -94,7 +94,7 @@ export default async function Home() {
           <GuideContent />
         </div>
         <p className="font-body text-sm text-ink-soft text-center mt-8 [&_a]:text-link [&_a]:underline [&_a:hover]:text-rasta-red">
-          See also the <Link href="/history">History of RKR</Link>.
+          See also the <Link href="/history">Acknowledgements</Link>.
         </p>
       </section>
 
