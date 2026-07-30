@@ -16,19 +16,22 @@ const COLUMNS: {
   // When set, this "credit" column is blanked whenever it matches the named
   // base column (case/space-insensitively), so only genuine differences show.
   creditOf?: keyof RecordListRow;
+  // Short values (year, format, catalogue numbers) that should never wrap
+  // mid-value — wrapping "1988" to "19 / 88" just makes the row taller.
+  nowrap?: boolean;
 }[] = [
-  { key: "artist", label: "Artist", field: "artist", link: { type: "facet", slug: "artists" }, width: "11%" },
-  { key: "artist", label: "Artist Credit", field: "artist_credit", width: "7%", creditOf: "artist" },
-  { key: "title", label: "Title", field: "title", link: { type: "record" }, width: "12%" },
-  { key: "title", label: "Title Credit", field: "title_credit", width: "7%", creditOf: "title" },
-  { key: "label", label: "Label", field: "label", link: { type: "facet", slug: "labels" }, width: "9%" },
-  { key: "label_number", label: "Label No.", field: "label_number", mono: true, width: "7%" },
-  { key: "matrix_number", label: "Matrix No.", field: "matrix_number", mono: true, width: "8%" },
+  { key: "artist", label: "Artist", field: "artist", link: { type: "facet", slug: "artists" }, width: "12%" },
+  { key: "artist", label: "Artist Credit", field: "artist_credit", width: "10%", creditOf: "artist" },
+  { key: "title", label: "Title", field: "title", link: { type: "record" }, width: "13%" },
+  { key: "title", label: "Title Credit", field: "title_credit", width: "9%", creditOf: "title" },
+  { key: "label", label: "Label", field: "label", link: { type: "facet", slug: "labels" }, width: "8%" },
+  { key: "label_number", label: "Label No.", field: "label_number", mono: true, width: "6%", nowrap: true },
+  { key: "matrix_number", label: "Matrix No.", field: "matrix_number", mono: true, width: "7%", nowrap: true },
   { key: "country", label: "Country", field: "country", link: { type: "facet", slug: "countries" }, width: "7%" },
-  { key: "year", label: "Year", field: "year", link: { type: "facet", slug: "years" }, width: "7%" },
-  { key: "format", label: "Format", field: "format", link: { type: "facet", slug: "formats" }, width: "7%" },
-  { key: "riddim", label: "Riddim", field: "riddim", link: { type: "facet", slug: "riddims" }, width: "9%" },
-  { key: "producer", label: "Producer", field: "producer", link: { type: "facet", slug: "producers" }, width: "9%" },
+  { key: "year", label: "Year", field: "year", link: { type: "facet", slug: "years" }, width: "5%", nowrap: true },
+  { key: "format", label: "Format", field: "format", link: { type: "facet", slug: "formats" }, width: "6%", nowrap: true },
+  { key: "riddim", label: "Riddim", field: "riddim", link: { type: "facet", slug: "riddims" }, width: "10%" },
+  { key: "producer", label: "Producer", field: "producer", link: { type: "facet", slug: "producers" }, width: "7%" },
 ];
 
 // Only these get a clickable sort header — the "credit" variants sort by
@@ -113,7 +116,7 @@ export default function ResultsTable({
             wrapping text one character per line (confirmed by testing: a
             375px-wide viewport produced 38px-wide cells and 217px-tall
             rows before this fix). */}
-        <table className="w-full min-w-[900px] table-fixed text-sm bg-paper">
+        <table className="w-full min-w-[1040px] table-fixed text-sm bg-paper">
           <colgroup>
             {COLUMNS.map((col) => (
               <col key={col.field} style={{ width: col.width }} />
@@ -127,7 +130,7 @@ export default function ResultsTable({
                 return (
                   <th
                     key={col.field}
-                    className="text-left font-body font-semibold px-3 py-2 break-words"
+                    className="text-left font-body font-semibold px-2.5 py-1.5 break-words leading-tight"
                   >
                     {isSortable ? (
                       <Link
@@ -182,9 +185,9 @@ export default function ResultsTable({
                   return (
                     <td
                       key={col.field}
-                      className={`px-3 py-2 align-top break-words ${
-                        col.mono ? "font-catalog text-xs" : "font-body"
-                      }`}
+                      className={`px-2.5 py-1 align-top leading-tight ${
+                        col.nowrap ? "whitespace-nowrap" : "break-words"
+                      } ${col.mono ? "font-catalog text-xs" : "font-body"}`}
                     >
                       {uncertain ? (
                         <span
