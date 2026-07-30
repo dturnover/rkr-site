@@ -8,7 +8,7 @@
 // labels. `font-bold` (700, loaded in layout.tsx) makes them clearly outweigh
 // the text, matching the class-based `.font-display` headings elsewhere.
 export const PROSE_CLASS =
-  "font-body text-ink leading-relaxed space-y-4 [&_h2]:font-display [&_h2]:font-bold [&_h2]:text-2xl [&_h2]:text-rasta-red [&_h2]:mt-8 [&_h2]:mb-2 [&_h3]:font-display [&_h3]:font-bold [&_h3]:text-lg [&_h3]:text-ink [&_h3]:mt-6 [&_h3]:mb-1 [&_a]:text-link [&_a:hover]:text-rasta-red";
+  "font-body text-ink leading-relaxed space-y-4 [&_h2]:font-display [&_h2]:font-extrabold [&_h2]:text-3xl [&_h2]:text-rasta-red [&_h2]:mt-8 [&_h2]:mb-2 [&_h3]:font-display [&_h3]:font-extrabold [&_h3]:text-xl [&_h3]:text-ink [&_h3]:mt-6 [&_h3]:mb-1 [&_a]:text-link [&_a:hover]:text-rasta-red";
 
 export default function ProsePage({
   title,

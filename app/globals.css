@@ -53,17 +53,17 @@ html {
    *lighter* than the chunky Consolas body copy. Pin them to 700 (loaded in
    layout.tsx) so headings clearly out-weigh the surrounding text. */
 .font-display {
-  font-weight: 700;
+  font-weight: 800;
 }
 
 body {
   background-color: var(--parchment-bg);
   color: var(--ink-brown);
   font-family: var(--font-body);
-  /* A hair heavier than the 400 default — enough to give the delicate
-     Garamond body copy a touch more presence on the parchment without
-     reading as "bold". Relies on the variable font loaded in layout.tsx. */
-  font-weight: 460;
+  /* Heavier than the 400 default so the Inconsolata body copy has real
+     presence on the parchment. Relies on the variable font loaded in
+     layout.tsx, which renders any intermediate weight exactly. */
+  font-weight: 540;
   background-image:
     radial-gradient(ellipse 60% 40% at 15% 10%, rgba(198, 168, 119, 0.35), transparent 60%),
     radial-gradient(ellipse 50% 35% at 90% 80%, rgba(198, 168, 119, 0.3), transparent 60%),

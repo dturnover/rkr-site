@@ -10,7 +10,9 @@ import { SITE_URL } from "@/lib/siteUrl";
 const cinzel = Cinzel({
   variable: "--font-cinzel",
   subsets: ["latin"],
-  weight: ["400", "600", "700"],
+  // 700 is kept for the SVG masthead wordmark (HeaderBanner); 800 is the
+  // weight the .font-display headings now render at (see globals.css).
+  weight: ["400", "700", "800"],
 });
 
 // Loaded as a variable font (no fixed `weight` list) so the body copy can use
