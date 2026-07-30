@@ -52,7 +52,7 @@ export default async function Home() {
 
       <Link
         href="/advanced-search"
-        className="frame-double bg-parchment-deep/40 hover:bg-parchment-deep/70 transition-colors flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-4 lg:-mt-4"
+        className="hidden lg:flex frame-double bg-parchment-deep/40 hover:bg-parchment-deep/70 transition-colors items-center gap-3 sm:gap-4 px-4 sm:px-6 py-4 lg:-mt-4"
       >
         <span className="font-display text-base sm:text-xl text-ink">Advanced Search</span>
         <span className="font-body text-sm text-ink-soft hidden sm:inline">
