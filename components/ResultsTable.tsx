@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { RecordListRow, SortKey } from "@/lib/queries/shared";
 import { facetLink, type FacetSlug } from "@/lib/facetConfig";
-import { isUncertainValue } from "@/lib/dataQuality";
+import { isUncertainValue, creditIfDifferent } from "@/lib/dataQuality";
 import Pagination from "./Pagination";
 
 type CellLink = { type: "record" } | { type: "facet"; slug: FacetSlug };
@@ -13,11 +13,14 @@ const COLUMNS: {
   mono?: boolean;
   link?: CellLink;
   width: string;
+  // When set, this "credit" column is blanked whenever it matches the named
+  // base column (case/space-insensitively), so only genuine differences show.
+  creditOf?: keyof RecordListRow;
 }[] = [
   { key: "artist", label: "Artist", field: "artist", link: { type: "facet", slug: "artists" }, width: "11%" },
-  { key: "artist", label: "Artist Credit", field: "artist_credit", width: "7%" },
+  { key: "artist", label: "Artist Credit", field: "artist_credit", width: "7%", creditOf: "artist" },
   { key: "title", label: "Title", field: "title", link: { type: "record" }, width: "12%" },
-  { key: "title", label: "Title Credit", field: "title_credit", width: "7%" },
+  { key: "title", label: "Title Credit", field: "title_credit", width: "7%", creditOf: "title" },
   { key: "label", label: "Label", field: "label", link: { type: "facet", slug: "labels" }, width: "9%" },
   { key: "label_number", label: "Label No.", field: "label_number", mono: true, width: "7%" },
   { key: "matrix_number", label: "Matrix No.", field: "matrix_number", mono: true, width: "8%" },
@@ -161,7 +164,14 @@ export default function ResultsTable({
                 } hover:bg-parchment-deep/40`}
               >
                 {COLUMNS.map((col) => {
-                  const value = row[col.field];
+                  // Credit columns are blanked when they merely duplicate their
+                  // base column (Artist Credit == Artist, Title Credit == Title).
+                  const value = col.creditOf
+                    ? creditIfDifferent(
+                        row[col.field] as string | null,
+                        row[col.creditOf] as string | null,
+                      )
+                    : row[col.field];
                   const uncertain = typeof value === "string" && isUncertainValue(value);
                   const href =
                     value && col.link && !uncertain

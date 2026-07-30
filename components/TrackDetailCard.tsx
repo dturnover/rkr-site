@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { RecordDetail } from "@/lib/queries/records";
 import { hasBSide } from "@/lib/queries/records";
 import { facetLink, type FacetSlug } from "@/lib/facetConfig";
-import { isUncertainValue } from "@/lib/dataQuality";
+import { isUncertainValue, creditIfDifferent } from "@/lib/dataQuality";
 
 function Field({
   label,
@@ -62,21 +62,6 @@ function titleSearchHref(title: string): string {
 function capitalizeFirst(value: string | null): string | null {
   if (!value) return value;
   return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-// Title Credit is only carried in the data when it differs from the Title
-// (the compiler's convention). Artist Credit isn't compiled that way — it's
-// frequently just a duplicate of the Artist — so suppress it here when it says
-// nothing new, matching the Title behaviour. Compared case/space-insensitively
-// so "Studio One " and "studio one" count as the same.
-function creditIfDifferent(
-  value: string | null | undefined,
-  from: string | null | undefined
-): string | null {
-  if (!value) return null;
-  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-  if (from && norm(value) === norm(from)) return null;
-  return value;
 }
 
 export default function TrackDetailCard({ record }: { record: RecordDetail }) {

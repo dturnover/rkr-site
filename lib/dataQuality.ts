@@ -14,3 +14,19 @@ export function isUncertainValue(value: string | null | undefined): boolean {
   if (!value) return false;
   return UNCERTAIN_VALUE_MARKERS.has(value.trim().toLowerCase());
 }
+
+// A "credit" field (Artist Credit, Title Credit) only carries information when
+// it differs from its base field (Artist, Title); when it's identical it's just
+// a duplicate that clutters the view. Returns the value when it adds something,
+// or null when it matches `base` (compared case- and whitespace-insensitively)
+// so callers can render the cell blank — making the genuine differences stand
+// out. Used by both the results table and the record detail card.
+export function creditIfDifferent(
+  value: string | null | undefined,
+  base: string | null | undefined
+): string | null {
+  if (!value) return null;
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  if (base && norm(value) === norm(base)) return null;
+  return value;
+}
