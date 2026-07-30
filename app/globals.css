@@ -34,8 +34,8 @@
   /* Body copy: Courier Prime (loaded in layout.tsx) — a refined typewriter
      face for a classic, liner-notes feel. Self-hosted, so every visitor sees
      the same font. It ships in Regular (400) and Bold (700) only, no
-     intermediate weights, so the body sits at 400 and bold labels/headings
-     provide the contrast (see `body { font-weight }`). It's also the
+     intermediate weights; the body uses its 700 Bold for real presence on the
+     parchment (see `body { font-weight }`). It's also the
      --font-catalog face, so catalogue numbers now share the body's look.
      To go back to the original serif body, restore:
        --font-body: var(--font-garamond), Georgia, "Times New Roman", serif; */
@@ -61,10 +61,10 @@ body {
   background-color: var(--parchment-bg);
   color: var(--ink-brown);
   font-family: var(--font-body);
-  /* Courier Prime's regular weight. It has no intermediate weights, so this
-     stays at 400 and its 700 Bold is reserved for <strong>, labels and
-     headings — keeping normal vs. emphasised text distinguishable. */
-  font-weight: 400;
+  /* Courier Prime Bold. Regular read too light on the parchment; Courier has
+     no weight between 400 and 700, so the whole body sits at 700. Heading
+     hierarchy comes from the display font and size rather than weight. */
+  font-weight: 700;
   background-image:
     radial-gradient(ellipse 60% 40% at 15% 10%, rgba(198, 168, 119, 0.35), transparent 60%),
     radial-gradient(ellipse 50% 35% at 90% 80%, rgba(198, 168, 119, 0.3), transparent 60%),
