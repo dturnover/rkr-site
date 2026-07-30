@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Cinzel, EB_Garamond, Courier_Prime, Inconsolata } from "next/font/google";
+import { Cinzel, EB_Garamond, Courier_Prime, Oswald, Zilla_Slab } from "next/font/google";
 import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteSidebar from "@/components/SiteSidebar";
@@ -30,15 +30,22 @@ const courierPrime = Courier_Prime({
   weight: ["400", "700"],
 });
 
-// Body copy. A humanist monospace designed as a webfont alternative to
-// Consolas — self-hosted by next/font, so every visitor sees the identical
-// face rather than falling back to whatever mono their device happens to
-// have (iOS/Android/macOS never had Consolas). Loaded as a variable font (no
-// fixed `weight` list) so `body { font-weight: 460 }` in globals.css lands on
-// a true intermediate weight instead of snapping to 400.
-const inconsolata = Inconsolata({
-  variable: "--font-inconsolata",
+// Headings. A tall, condensed sans with a vintage poster / flyer feel.
+// Variable font (no fixed `weight` list), so .font-display in globals.css can
+// pick any weight. See --font-display there.
+const oswald = Oswald({
+  variable: "--font-oswald",
   subsets: ["latin"],
+});
+
+// Body copy (and catalogue numbers). A sturdy slab serif with a classic
+// record-label feel that pairs with the condensed headings. Self-hosted by
+// next/font. Static instances only, so the weights the UI uses are listed
+// explicitly (400/500 body, 700 for bold labels and <strong>).
+const zillaSlab = Zilla_Slab({
+  variable: "--font-zilla-slab",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 const SITE_TITLE = "Roots Knotty Roots — The Discography of Jamaican Music";
@@ -79,7 +86,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${cinzel.variable} ${garamond.variable} ${courierPrime.variable} ${inconsolata.variable} h-full antialiased`}
+      className={`${cinzel.variable} ${garamond.variable} ${courierPrime.variable} ${oswald.variable} ${zillaSlab.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <SiteHeader />
