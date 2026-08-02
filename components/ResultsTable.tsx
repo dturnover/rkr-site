@@ -25,12 +25,15 @@ const COLUMNS: {
   { key: "title", label: "Title", field: "title", link: { type: "record" }, width: "13%" },
   { key: "title", label: "Title Credit", field: "title_credit", width: "9%", creditOf: "title" },
   { key: "label", label: "Label", field: "label", link: { type: "facet", slug: "labels" }, width: "8%" },
-  { key: "label_number", label: "Label No.", field: "label_number", mono: true, width: "6%", nowrap: true },
-  { key: "matrix_number", label: "Matrix No.", field: "matrix_number", mono: true, width: "7%", nowrap: true },
+  // Label/Matrix numbers are NOT nowrap: some are long descriptive strings
+  // (e.g. "DSR A Side I Love King Selassie - Garfield 435"), and forcing them
+  // onto one line made them overflow into the next column. They wrap instead.
+  { key: "label_number", label: "Label No.", field: "label_number", mono: true, width: "6%" },
+  { key: "matrix_number", label: "Matrix No.", field: "matrix_number", mono: true, width: "8%" },
   { key: "country", label: "Country", field: "country", link: { type: "facet", slug: "countries" }, width: "7%" },
   { key: "year", label: "Year", field: "year", link: { type: "facet", slug: "years" }, width: "5%", nowrap: true },
   { key: "format", label: "Format", field: "format", link: { type: "facet", slug: "formats" }, width: "6%", nowrap: true },
-  { key: "riddim", label: "Riddim", field: "riddim", link: { type: "facet", slug: "riddims" }, width: "10%" },
+  { key: "riddim", label: "Riddim", field: "riddim", link: { type: "facet", slug: "riddims" }, width: "9%" },
   { key: "producer", label: "Producer", field: "producer", link: { type: "facet", slug: "producers" }, width: "7%" },
 ];
 
