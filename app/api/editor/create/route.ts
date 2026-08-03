@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { createRecord, EDITABLE_FIELDS, type EditableField } from "@/lib/editor/overlay";
+import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
 export const maxDuration = 60;
 
@@ -28,6 +30,9 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.redirect(new URL("/records/new?createError=1", request.url));
   }
+
+  // New record should appear immediately in cached search/browse/status views.
+  revalidateTag(CATALOGUE_TAG, { expire: 0 });
 
   return NextResponse.redirect(new URL(`/records/${newId}?created=1`, request.url));
 }

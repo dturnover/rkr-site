@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { del } from "@vercel/blob";
 import { isAdminAuthenticated } from "@/lib/auth/requireAdmin";
 import { importAndSwap } from "@/lib/import/atomicSwap";
+import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
 // A full CSV rebuild (132k+ rows, generated columns, FTS indexing) is a
 // genuinely heavy one-off operation — give it the most headroom Vercel
@@ -49,6 +51,9 @@ export async function POST(request: NextRequest) {
     }
     const buffer = Buffer.from(await res.arrayBuffer());
     const result = await importAndSwap(buffer);
+    // Flush all catalogue caches (records, search, browse, status) so the new
+    // data is served immediately rather than after each cache's TTL.
+    revalidateTag(CATALOGUE_TAG, { expire: 0 });
 
     await del(safeUrl).catch(() => {
       // Not fatal — the file will just sit in Blob storage until manually

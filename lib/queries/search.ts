@@ -1,4 +1,6 @@
+import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
+import { CATALOGUE_TAG } from "@/lib/cacheTags";
 import { CATALOG_FTS_COLUMNS } from "@/lib/db/ddl";
 import {
   ALPHA_SORT_THRESHOLD,
@@ -96,7 +98,16 @@ function normalizeCatalogTerm(term: string): string {
 // keyword search won't surface these matches — accepted here since
 // advancedSearch has an exact-match fallback for the one field where short
 // terms are actually common (2-letter country codes).
-export async function keywordSearch(
+// Cached (short TTL): under a traffic spike, repeated popular searches are
+// served from cache instead of re-running FTS against the DB each time. Query +
+// sort/dir/page are the cache key. Invalidated on any edit/import (CATALOGUE_TAG).
+export const keywordSearch = unstable_cache(
+  keywordSearchUncached,
+  ["keyword-search"],
+  { tags: [CATALOGUE_TAG], revalidate: 60 },
+);
+
+async function keywordSearchUncached(
   q: string,
   opts: { sort?: string; dir?: string; page?: number }
 ): Promise<{ rows: RecordListRow[]; total: number }> {
@@ -343,7 +354,14 @@ export function hasAnyField(fields: AdvancedSearchFields): boolean {
   return Object.values(fields).some((v) => v && v.trim() !== "");
 }
 
-export async function advancedSearch(
+// Cached (short TTL) — see keywordSearch above.
+export const advancedSearch = unstable_cache(
+  advancedSearchUncached,
+  ["advanced-search"],
+  { tags: [CATALOGUE_TAG], revalidate: 60 },
+);
+
+async function advancedSearchUncached(
   fields: AdvancedSearchFields,
   opts: { sort?: string; dir?: string; page?: number }
 ): Promise<{ rows: RecordListRow[]; total: number }> {

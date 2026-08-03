@@ -1,4 +1,6 @@
+import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
+import { CATALOGUE_TAG } from "@/lib/cacheTags";
 import {
   LIVE_TABLE,
   LIVE_FTS_TABLE,
@@ -231,12 +233,18 @@ export async function restorePrevious(): Promise<void> {
   }
 }
 
-export async function getDatabaseStatus() {
-  const live = await tableExists(LIVE_TABLE);
-  return {
-    hasDatabase: live,
-    rowCount: live ? await countRows(LIVE_TABLE) : 0,
-    lastUpdated: await getLastUpdated(),
-    hasPrevious: await tableExists(PREVIOUS_TABLE),
-  };
-}
+// Cached: the home page reads this on every visit. Invalidated immediately on
+// import/restore (CATALOGUE_TAG); the 5-minute revalidate is a safety net.
+export const getDatabaseStatus = unstable_cache(
+  async () => {
+    const live = await tableExists(LIVE_TABLE);
+    return {
+      hasDatabase: live,
+      rowCount: live ? await countRows(LIVE_TABLE) : 0,
+      lastUpdated: await getLastUpdated(),
+      hasPrevious: await tableExists(PREVIOUS_TABLE),
+    };
+  },
+  ["database-status"],
+  { tags: [CATALOGUE_TAG], revalidate: 300 },
+);

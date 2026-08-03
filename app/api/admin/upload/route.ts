@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { isAdminAuthenticated } from "@/lib/auth/requireAdmin";
 import { importAndSwap } from "@/lib/import/atomicSwap";
 import { isBodyTooLarge, UPLOAD_BODY_MAX_BYTES } from "@/lib/http/bodySizeGuard";
+import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
 // Same reasoning as /api/admin/import-from-blob: a full CSV rebuild is a
 // heavy one-off, give it the most headroom Vercel allows (needs Fluid
@@ -32,6 +34,7 @@ export async function POST(request: NextRequest) {
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const result = await importAndSwap(buffer);
+    revalidateTag(CATALOGUE_TAG, { expire: 0 });
     const params = new URLSearchParams({
       imported: String(result.rowCount),
       warning: result.lowRowCountWarning ? "1" : "0",

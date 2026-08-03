@@ -1,4 +1,6 @@
+import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
+import { CATALOGUE_TAG } from "@/lib/cacheTags";
 import { FACETS, type FacetSlug } from "@/lib/facetConfig";
 import { isUncertainValue } from "@/lib/dataQuality";
 import {
@@ -38,7 +40,15 @@ export function isValidLetter(value: string | undefined | null): value is string
  * standard index and turns into a full scan, confirmed by testing: 52s vs
  * 276ms for the same rows).
  */
-export async function getFacetIndex(
+// Cached: facet lists change only when the catalogue is re-imported, and the
+// index queries can be heavy. Invalidated on import (CATALOGUE_TAG).
+export const getFacetIndex = unstable_cache(
+  getFacetIndexUncached,
+  ["facet-index"],
+  { tags: [CATALOGUE_TAG], revalidate: 3600 },
+);
+
+async function getFacetIndexUncached(
   slug: FacetSlug,
   letter?: string
 ): Promise<FacetIndexEntry[]> {
@@ -97,7 +107,15 @@ export async function getFacetIndex(
   return entries;
 }
 
-export async function getFacetValueRows(
+// Cached (medium TTL): a facet value page (e.g. all records on one label) is a
+// heavy scan; cache it, keyed by value + sort/dir/page. Invalidated on import.
+export const getFacetValueRows = unstable_cache(
+  getFacetValueRowsUncached,
+  ["facet-value-rows"],
+  { tags: [CATALOGUE_TAG], revalidate: 600 },
+);
+
+async function getFacetValueRowsUncached(
   slug: FacetSlug,
   value: string,
   opts: { sort?: string; dir?: string; page?: number }
