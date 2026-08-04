@@ -181,6 +181,24 @@ export default async function AdminPage({
         )}
       </section>
 
+      <section className="frame-double bg-paper p-6 mb-6">
+        <h2 className="font-display text-lg text-ink mb-2">Export Catalogue</h2>
+        <p className="font-body text-sm text-ink-soft mb-4">
+          Download the current catalogue as an Excel spreadsheet &mdash; the live
+          data including every editor&rsquo;s corrections and added records. It
+          uses the same column order as the import, so it can be edited and
+          re-uploaded. A large catalogue may take a little while to prepare.
+        </p>
+        {/* Plain anchor (not a prefetched link) so navigating triggers the
+            download rather than Next prefetching this heavy route. */}
+        <a
+          href="/api/admin/export"
+          className="inline-block px-4 py-2 bg-frame text-paper font-body tracking-wide hover:bg-rasta-red transition-colors"
+        >
+          Download XLSX
+        </a>
+      </section>
+
       {/* Manage Editors — provision access for named users */}
       <section className="frame-double bg-paper p-6 mb-6">
         <h2 className="font-display text-lg text-ink mb-2">Editors</h2>
