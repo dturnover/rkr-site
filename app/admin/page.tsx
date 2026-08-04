@@ -156,11 +156,12 @@ export default async function AdminPage({
       </section>
 
       <section className="frame-double bg-paper p-6 mb-6">
-        <h2 className="font-display text-lg text-ink mb-2">Upload New CSV</h2>
+        <h2 className="font-display text-lg text-ink mb-2">Upload New Catalogue</h2>
         <p className="font-body text-sm text-ink-soft mb-4">
-          Choose an updated version of the RKR export. This refreshes the live
-          catalogue &mdash; the site stays up throughout, editors&rsquo; changes are
-          re-applied on top, and the previous version can be restored below.
+          Choose an updated version of the RKR catalogue &mdash; either your Excel
+          workbook (.xlsx) or a CSV export. This refreshes the live catalogue: the
+          site stays up throughout, editors&rsquo; changes are re-applied on top, and
+          the previous version can be restored below.
         </p>
         {useBlobUpload ? (
           <BlobUploadForm />
@@ -171,7 +172,7 @@ export default async function AdminPage({
             encType="multipart/form-data"
             className="flex flex-col gap-3"
           >
-            <input type="file" name="csv" accept=".csv" required className="font-body text-sm" />
+            <input type="file" name="csv" accept=".csv,.xlsx" required className="font-body text-sm" />
             <button
               type="submit"
               className="self-start px-4 py-2 bg-frame text-paper font-body tracking-wide hover:bg-rasta-red transition-colors"

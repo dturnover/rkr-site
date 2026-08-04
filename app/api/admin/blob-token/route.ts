@@ -20,7 +20,13 @@ export async function POST(request: NextRequest) {
       body,
       request,
       onBeforeGenerateToken: async () => ({
-        allowedContentTypes: ["text/csv", "application/vnd.ms-excel", "application/octet-stream"],
+        allowedContentTypes: [
+          "text/csv",
+          "application/vnd.ms-excel",
+          // .xlsx — the Excel workbook the compiler maintains the catalogue in
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/octet-stream",
+        ],
         maximumSizeInBytes: 300 * 1024 * 1024,
         addRandomSuffix: true,
       }),

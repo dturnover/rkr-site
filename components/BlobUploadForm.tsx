@@ -56,7 +56,7 @@ export default function BlobUploadForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <input type="file" name="csv" accept=".csv" required disabled={busy} className="font-body text-sm" />
+      <input type="file" name="csv" accept=".csv,.xlsx" required disabled={busy} className="font-body text-sm" />
       <button
         type="submit"
         disabled={busy}

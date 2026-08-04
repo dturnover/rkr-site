@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import iconv from "iconv-lite";
 import { parse } from "csv-parse/sync";
 import { getClient } from "@/lib/db/client";
@@ -167,6 +168,78 @@ export function parseCsvBuffer(buffer: Buffer): FieldRow[] {
     });
 }
 
+// XLSX files are ZIP archives, which always start with the "PK\x03\x04" magic
+// bytes; a CSV is plain text and never does. This tells the two apart so an
+// upload can be either the CSV export or the original Excel workbook.
+function isXlsxBuffer(buffer: Buffer): boolean {
+  return (
+    buffer.length >= 4 &&
+    buffer[0] === 0x50 &&
+    buffer[1] === 0x4b &&
+    buffer[2] === 0x03 &&
+    buffer[3] === 0x04
+  );
+}
+
+// A single Excel cell's value can be a string, a number, a date, a formula
+// ({ result }), a hyperlink ({ text }) or rich text ({ richText }). Flatten any
+// of those to the plain string the importer expects.
+function xlsxCellToString(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
+  if (v instanceof Date) return String(v.getUTCFullYear());
+  if (typeof v === "object") {
+    const o = v as { text?: string; result?: unknown; richText?: { text: string }[] };
+    if (Array.isArray(o.richText)) return o.richText.map((r) => r.text).join("");
+    if (typeof o.text === "string") return o.text;
+    if (o.result != null) return String(o.result);
+    return "";
+  }
+  return String(v);
+}
+
+/** Parses an uploaded .xlsx exactly the way parseCsvBuffer parses a .csv: the
+ * first worksheet, header row skipped, first 24 columns in CSV_FIELDS order.
+ * Uses exceljs's streaming reader so a 130k-row workbook is read row-by-row
+ * instead of loading every cell into memory at once. */
+export async function parseXlsxBuffer(buffer: Buffer): Promise<FieldRow[]> {
+  const ExcelJS = (await import("exceljs")).default;
+  const reader = new ExcelJS.stream.xlsx.WorkbookReader(Readable.from(buffer), {
+    worksheets: "emit",
+    sharedStrings: "cache",
+  });
+
+  const out: FieldRow[] = [];
+  let sheetIndex = 0;
+  for await (const worksheet of reader) {
+    sheetIndex++;
+    if (sheetIndex > 1) break; // the catalogue lives on the first sheet
+    let rowNumber = 0;
+    for await (const row of worksheet) {
+      rowNumber++;
+      if (rowNumber === 1) continue; // header row, skipped like the CSV path
+      const values = row.values as unknown[]; // 1-indexed; values[0] is undefined
+      const byField: FieldRow = {};
+      let hasAny = false;
+      CSV_FIELDS.forEach((f, i) => {
+        const cell = nullIfBlank(xlsxCellToString(values[i + 1]));
+        byField[f] = cell;
+        if (cell !== null) hasAny = true;
+      });
+      if (hasAny) out.push(byField); // drop fully-blank rows
+    }
+  }
+  return out;
+}
+
+/** Parses an uploaded catalogue file, accepting either the CSV export or the
+ * original Excel workbook — chosen by the file's bytes, not its name. */
+export async function parseUploadBuffer(buffer: Buffer): Promise<FieldRow[]> {
+  return isXlsxBuffer(buffer) ? parseXlsxBuffer(buffer) : parseCsvBuffer(buffer);
+}
+
 function insertPartsFor(byField: FieldRow): {
   values: (string | null)[];
   yearSort: number | null;
@@ -248,7 +321,7 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
   // Parse dad's file, then re-apply the editor overlay on top (fills blanks,
   // appends editor-added records) — see mergeOverlay. On a database with no
   // editor activity this is a no-op and the import is unchanged.
-  const rows = await mergeOverlay(parseCsvBuffer(csvBuffer));
+  const rows = await mergeOverlay(await parseUploadBuffer(csvBuffer));
   const client = await getClient();
 
   await client.executeMultiple(`
