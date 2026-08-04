@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { listUsers } from "@/lib/auth/users";
+import { listPendingInvites } from "@/lib/auth/invites";
+import { inviteUrl } from "@/lib/email/sendInvite";
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import BlobUploadForm from "@/components/BlobUploadForm";
+import CopyLink from "@/components/CopyLink";
 
 // robots.txt asks crawlers not to fetch this path, but that only works for
 // crawlers that read it — and a URL that leaks some other way (a referrer, a
@@ -39,7 +42,8 @@ export default async function AdminPage({
   const imported = first(sp.imported);
   const warning = first(sp.warning) === "1";
   const restored = first(sp.restored);
-  const editorCreated = first(sp.editorCreated) === "1";
+  const invited = first(sp.invited); // "sent" (emailed) | "link" (show link)
+  const inviteRevoked = first(sp.inviteRevoked) === "1";
   const editorUpdated = first(sp.editorUpdated) === "1";
   const editorError = first(sp.editorError);
 
@@ -103,6 +107,7 @@ export default async function AdminPage({
   // ---- Signed in as admin: full tools ----
   const status = await getDatabaseStatus();
   const editors = await listUsers();
+  const pendingInvites = await listPendingInvites();
   const useBlobUpload = !!process.env.BLOB_READ_WRITE_TOKEN;
 
   return (
@@ -124,11 +129,20 @@ export default async function AdminPage({
         </Banner>
       )}
       {restored && <Banner tone="good">Restored the previous catalogue version.</Banner>}
-      {editorCreated && <Banner tone="good">Editor account created.</Banner>}
+      {invited === "sent" && (
+        <Banner tone="good">Invite emailed. They&rsquo;ll get a link to set their password.</Banner>
+      )}
+      {invited === "link" && (
+        <Banner tone="warn">
+          Invite created. No email was sent (no mail provider configured) &mdash; copy the invite
+          link below and send it to them yourself.
+        </Banner>
+      )}
+      {inviteRevoked && <Banner tone="good">Invite revoked.</Banner>}
       {editorUpdated && <Banner tone="good">Editor access updated.</Banner>}
       {editorError === "duplicate-email" && <Banner tone="bad">That email already has an account.</Banner>}
       {editorError === "invalid" && (
-        <Banner tone="bad">Enter a name, a valid email, and a password of at least 8 characters.</Banner>
+        <Banner tone="bad">Enter a name and a valid email address.</Banner>
       )}
       {error === "file-too-large" && (
         <Banner tone="bad">That file is too large. The CSV must be under 300MB.</Banner>
@@ -225,12 +239,13 @@ export default async function AdminPage({
       <section className="frame-double bg-paper p-6 mb-6">
         <h2 className="font-display text-lg text-ink mb-2">Editors</h2>
         <p className="font-body text-sm text-ink-soft mb-4">
-          Give a trusted contributor editing access. They sign in at this page
-          with their email and password, then edit any track directly.
+          Invite a trusted contributor. Enter their name and email &mdash; they get a link to
+          <strong> choose their own password</strong>, then they can edit any track directly. You
+          never see or set their password.
         </p>
 
         <form action="/api/admin/editors" method="POST" className="flex flex-col gap-3 mb-6">
-          <input type="hidden" name="action" value="create" />
+          <input type="hidden" name="action" value="invite" />
           <label className="flex flex-col gap-1">
             <span className="font-body text-xs uppercase tracking-wide text-ink-soft">Name</span>
             <input type="text" name="displayName" required className={inputClass} />
@@ -239,19 +254,44 @@ export default async function AdminPage({
             <span className="font-body text-xs uppercase tracking-wide text-ink-soft">Email</span>
             <input type="email" name="email" required className={inputClass} />
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-body text-xs uppercase tracking-wide text-ink-soft">
-              Password (min 8 characters)
-            </span>
-            <input type="text" name="password" required minLength={8} className={inputClass} />
-          </label>
           <button
             type="submit"
             className="self-start px-4 py-2 bg-frame text-paper font-body tracking-wide hover:bg-rasta-red transition-colors"
           >
-            Add Editor
+            Send Invite
           </button>
         </form>
+
+        {pendingInvites.length > 0 && (
+          <div className="mb-6">
+            <h3 className="font-body text-xs uppercase tracking-wide text-ink-soft mb-2">
+              Pending invites
+            </h3>
+            <ul className="space-y-3">
+              {pendingInvites.map((inv) => (
+                <li key={inv.token} className="border border-paper-stain/60 bg-parchment/20 p-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="font-body text-sm min-w-0">
+                      <span className="text-ink">{inv.display_name}</span>{" "}
+                      <span className="text-ink-soft">&lt;{inv.email}&gt;</span>
+                    </div>
+                    <form action="/api/admin/editors" method="POST" className="shrink-0">
+                      <input type="hidden" name="action" value="revoke-invite" />
+                      <input type="hidden" name="token" value={inv.token} />
+                      <button
+                        type="submit"
+                        className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink"
+                      >
+                        Revoke
+                      </button>
+                    </form>
+                  </div>
+                  <CopyLink url={inviteUrl(inv.token)} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {editors.length === 0 ? (
           <p className="font-body text-sm text-ink-soft italic">No editor accounts yet.</p>
