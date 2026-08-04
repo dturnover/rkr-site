@@ -18,11 +18,14 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self' data:",
-  // The admin upload form (BlobUploadForm.tsx) PUTs the CSV directly from
-  // the browser to Vercel Blob storage to route around the 4.5MB
-  // serverless request-body limit — that's a cross-origin fetch, so it
-  // needs an explicit connect-src allowance. Harmless when unused locally.
-  "connect-src 'self' https://*.public.blob.vercel-storage.com https://*.blob.vercel-storage.com",
+  // The admin upload form (BlobUploadForm.tsx) PUTs the file directly from the
+  // browser to Vercel Blob storage to route around the 4.5MB serverless
+  // request-body limit — a cross-origin fetch that needs an explicit
+  // connect-src allowance. The @vercel/blob client uploads to the APEX host
+  // `blob.vercel-storage.com`, which a `*.blob.vercel-storage.com` wildcard
+  // does NOT match — so it must be listed explicitly, or the upload fails with
+  // "Failed to fetch". The wildcard entries cover the per-store subdomains.
+  "connect-src 'self' https://blob.vercel-storage.com https://*.blob.vercel-storage.com https://*.public.blob.vercel-storage.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
