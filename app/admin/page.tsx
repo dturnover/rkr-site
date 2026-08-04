@@ -153,6 +153,12 @@ export default async function AdminPage({
             </dd>
           </div>
         </dl>
+        <p className="font-body text-sm mt-4">
+          <Link href="/mod-log" className="text-link underline hover:text-rasta-red">
+            View the modification log
+          </Link>
+          <span className="text-ink-soft"> &mdash; every change across the catalogue.</span>
+        </p>
       </section>
 
       <section className="frame-double bg-paper p-6 mb-6">
