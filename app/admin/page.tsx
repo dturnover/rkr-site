@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { listUsers } from "@/lib/auth/users";
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
@@ -197,6 +198,20 @@ export default async function AdminPage({
         >
           Download XLSX
         </a>
+      </section>
+
+      <section className="frame-double bg-paper p-6 mb-6">
+        <h2 className="font-display text-lg text-ink mb-2">Suggested Corrections</h2>
+        <p className="font-body text-sm text-ink-soft mb-4">
+          Review likely misspellings the site has flagged in the fixed categories
+          (Country, Format, Genre) and fix them in one click. Admin only.
+        </p>
+        <Link
+          href="/admin/typos"
+          className="inline-block px-4 py-2 bg-frame text-paper font-body tracking-wide hover:bg-rasta-red transition-colors"
+        >
+          Review Suggested Corrections
+        </Link>
       </section>
 
       {/* Manage Editors — provision access for named users */}
