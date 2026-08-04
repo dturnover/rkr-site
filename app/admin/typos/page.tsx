@@ -61,11 +61,11 @@ export default async function TyposPage({
       {error === "invalid" && <Banner tone="bad">That request was invalid.</Banner>}
 
       <p className="font-body text-sm text-ink-soft mb-6">
-        Likely misspellings in the catalogue&rsquo;s fixed categories (Country, Format, Genre) &mdash;
-        values that are one or two letters away from a much more common spelling. Fixes apply to
-        every record with that value and are kept across catalogue re-imports.{" "}
-        <span className="text-ink">&ldquo;Needs review&rdquo;</span> flags the less certain ones;
-        the rest are obvious near-misses.
+        Safe cleanups in the catalogue&rsquo;s fixed categories (Country, Format, Genre):{" "}
+        <span className="text-ink">Formatting</span> = the same value written inconsistently
+        (e.g. <em>dancehall</em> &rarr; <em>Dancehall</em>); <span className="text-ink">Spelling</span>
+        {" "}= a known misspelling (e.g. <em>Scandanavia</em> &rarr; <em>Scandinavia</em>). Each fix
+        applies to every record with that value and is kept across catalogue re-imports.
       </p>
 
       {suggestions.length === 0 ? (
@@ -80,7 +80,7 @@ export default async function TyposPage({
                 <th className="text-left font-semibold px-3 py-2">Field</th>
                 <th className="text-left font-semibold px-3 py-2">Current value</th>
                 <th className="text-left font-semibold px-3 py-2">Suggested</th>
-                <th className="text-left font-semibold px-3 py-2">Review?</th>
+                <th className="text-left font-semibold px-3 py-2">Type</th>
                 <th className="text-left font-semibold px-3 py-2">Action</th>
               </tr>
             </thead>
@@ -99,11 +99,9 @@ export default async function TyposPage({
                     <span className="text-ink-soft text-xs">({s.suggestedCount.toLocaleString()})</span>
                   </td>
                   <td className="px-3 py-2 align-top">
-                    {s.needsReview ? (
-                      <span className="text-xs uppercase tracking-wide text-rasta-red">Review</span>
-                    ) : (
-                      <span className="text-xs uppercase tracking-wide text-ink-soft">Obvious</span>
-                    )}
+                    <span className="text-xs uppercase tracking-wide text-ink-soft">
+                      {s.kind === "spelling" ? "Spelling" : "Formatting"}
+                    </span>
                   </td>
                   <td className="px-3 py-2 align-top">
                     <div className="flex gap-2">
