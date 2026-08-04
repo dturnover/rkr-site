@@ -81,9 +81,9 @@ export default function FacetBrowseIndex({
               <h2 className="font-display text-2xl text-rasta-red border-b border-paper-stain mb-3 pb-1">
                 {l}
               </h2>
-              <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-1">
+              <ul className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-x-6">
                 {items.map((e) => (
-                  <li key={e.value} className="truncate">
+                  <li key={e.value} className="truncate mb-1 break-inside-avoid">
                     <Link
                       href={`/browse/${facet.slug}/${encodeURIComponent(e.value)}`}
                       className="font-body hover:text-rasta-red"
@@ -134,9 +134,9 @@ export default function FacetBrowseIndex({
           <h2 className="font-display text-2xl text-rasta-red border-b border-paper-stain mb-3 pb-1">
             {active.toUpperCase()}
           </h2>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-1">
+          <ul className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-x-6">
             {entries.map((e) => (
-              <li key={e.value} className="truncate">
+              <li key={e.value} className="truncate mb-1 break-inside-avoid">
                 <Link
                   href={`/browse/${facet.slug}/${encodeURIComponent(e.value)}`}
                   className="font-body hover:text-rasta-red"

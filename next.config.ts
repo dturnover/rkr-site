@@ -19,13 +19,15 @@ const csp = [
   "img-src 'self' data:",
   "font-src 'self' data:",
   // The admin upload form (BlobUploadForm.tsx) PUTs the file directly from the
-  // browser to Vercel Blob storage to route around the 4.5MB serverless
-  // request-body limit — a cross-origin fetch that needs an explicit
-  // connect-src allowance. The @vercel/blob client uploads to the APEX host
-  // `blob.vercel-storage.com`, which a `*.blob.vercel-storage.com` wildcard
-  // does NOT match — so it must be listed explicitly, or the upload fails with
-  // "Failed to fetch". The wildcard entries cover the per-store subdomains.
-  "connect-src 'self' https://blob.vercel-storage.com https://*.blob.vercel-storage.com https://*.public.blob.vercel-storage.com",
+  // browser to Vercel Blob to route around the 4.5MB serverless request-body
+  // limit — a cross-origin fetch that needs an explicit connect-src allowance.
+  // The @vercel/blob CLIENT (v2.x) sends its upload requests to the Blob API at
+  // `https://vercel.com/api/blob` (see getApiUrl / defaultVercelBlobApiUrl in
+  // the package) — NOT to `blob.vercel-storage.com`. Missing `vercel.com` here
+  // is exactly what made the upload fail with "Failed to fetch". The
+  // *.vercel-storage.com hosts serve the stored blobs (the returned public
+  // URL), so they're kept too.
+  "connect-src 'self' https://vercel.com https://*.blob.vercel-storage.com https://*.public.blob.vercel-storage.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
