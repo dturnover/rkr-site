@@ -1,7 +1,17 @@
+import { headers } from "next/headers";
 import ResultsTable from "@/components/ResultsTable";
 import { keywordSearch, advancedSearch, type AdvancedSearchFields } from "@/lib/queries/search";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { allowRequest } from "@/lib/rateLimit";
+
+// Per-IP rate limit on search — defense-in-depth so one source can't hammer the
+// (potentially expensive) search endpoint. Generous enough that no real person
+// searching by hand will hit it; the platform firewall handles distributed
+// floods. Search results are cached separately, so this mainly caps a single IP
+// firing many *distinct* queries (cache misses) in a short burst.
+const SEARCH_RATE_LIMIT = 40; // requests
+const SEARCH_RATE_WINDOW_MS = 60_000; // per minute
 
 // Field-selector searches route through advancedSearch()'s single-field
 // substring LIKE, which can take up to ~100s on the current Turso database
@@ -41,6 +51,24 @@ export default async function SearchPage({
   const page = parsePage(first(sp.page));
 
   const useField = q.trim() && isAdvancedField(field) ? field : null;
+
+  // Throttle before doing any query work. Only actual searches (q present)
+  // count against the limit; an empty search does no work.
+  if (q.trim()) {
+    const h = await headers();
+    const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const allowed = await allowRequest(`search:${ip}`, SEARCH_RATE_LIMIT, SEARCH_RATE_WINDOW_MS);
+    if (!allowed) {
+      return (
+        <div>
+          <h1 className="font-display text-3xl text-ink mb-1">Search Results</h1>
+          <p className="font-body text-ink-soft mb-6">
+            You&rsquo;re searching very quickly — please wait a moment and try again.
+          </p>
+        </div>
+      );
+    }
+  }
 
   const { rows, total } = !q.trim()
     ? { rows: [], total: 0 }
