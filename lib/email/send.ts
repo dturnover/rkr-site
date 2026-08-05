@@ -32,6 +32,8 @@ export async function sendEmail(args: {
   subject: string;
   text: string;
   html: string;
+  /** Sets Reply-To, so replying reaches the real person (contact form). */
+  replyTo?: string;
 }): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.INVITE_FROM_EMAIL?.trim();
@@ -41,7 +43,14 @@ export async function sendEmail(args: {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: args.to, subject: args.subject, text: args.text, html: args.html }),
+      body: JSON.stringify({
+        from,
+        to: args.to,
+        subject: args.subject,
+        text: args.text,
+        html: args.html,
+        ...(args.replyTo ? { reply_to: args.replyTo } : {}),
+      }),
     });
     if (res.ok) return { ok: true };
 

@@ -224,6 +224,12 @@ export default async function AdminPage({
           </Link>
           <span className="text-ink-soft"> &mdash; every on-site correction that re-applies over dad&rsquo;s uploads.</span>
         </p>
+        <p className="font-body text-sm mt-2">
+          <Link href="/admin/messages" className="text-link underline hover:text-rasta-red">
+            Contact messages
+          </Link>
+          <span className="text-ink-soft"> &mdash; everything sent through the contact form.</span>
+        </p>
       </section>
 
       <section className="frame-double bg-paper p-6 mb-6">

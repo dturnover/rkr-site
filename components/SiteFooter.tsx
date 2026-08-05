@@ -1,4 +1,6 @@
 import Image from "next/image";
+import Link from "next/link";
+import { FACEBOOK_GROUP_URL } from "@/lib/siteLinks";
 
 export default function SiteFooter() {
   return (
@@ -8,6 +10,20 @@ export default function SiteFooter() {
           Roots Knotty Roots is a free, independent discography of Jamaican
           music &mdash; compiled over decades and shared here so it stays
           freely available to collectors, researchers, and fans everywhere.
+        </p>
+        <p className="font-body text-sm">
+          <Link href="/contact" className="text-link underline hover:text-rasta-red">
+            Contact
+          </Link>
+          <span className="text-ink-soft"> &middot; </span>
+          <a
+            href={FACEBOOK_GROUP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-link underline hover:text-rasta-red"
+          >
+            Facebook group
+          </a>
         </p>
         <Image
           src="/rkr-logo.png"

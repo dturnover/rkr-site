@@ -8,6 +8,7 @@ const ABOUT_LINKS: { href: string; label: string }[] = [
   { href: "/guide", label: "User's Guide" },
   { href: "/history", label: "Acknowledgements" },
   { href: "/interviews", label: "Interviews & Features" },
+  { href: "/contact", label: "Contact" },
 ];
 
 export default function SiteSidebar({

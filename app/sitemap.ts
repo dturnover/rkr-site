@@ -16,6 +16,7 @@ function staticEntries(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/guide`, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE_URL}/interviews`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/history`, changeFrequency: "yearly", priority: 0.4 },
+    { url: `${SITE_URL}/contact`, changeFrequency: "yearly", priority: 0.4 },
   ];
   // The browse landing pages (one per facet) — not every facet *value*, which
   // would balloon the sitemap with thin, filter-style pages; the record detail
