@@ -173,6 +173,12 @@ export default async function AdminPage({
           </Link>
           <span className="text-ink-soft"> &mdash; every change across the catalogue.</span>
         </p>
+        <p className="font-body text-sm mt-2">
+          <Link href="/admin/history" className="text-link underline hover:text-rasta-red">
+            Import history &amp; restore points
+          </Link>
+          <span className="text-ink-soft"> &mdash; download the catalogue as it was before any recent upload.</span>
+        </p>
       </section>
 
       <section className="frame-double bg-paper p-6 mb-6">

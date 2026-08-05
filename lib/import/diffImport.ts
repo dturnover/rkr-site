@@ -9,6 +9,7 @@ import {
   PREVIOUS_CATALOG_FTS_TABLE,
 } from "@/lib/db/ddl";
 import { acquireLock, releaseLock, stampUpdatedNow } from "./atomicSwap";
+import { recordImport, HISTORY_ROW_CAP } from "./importHistory";
 import {
   CSV_FIELDS,
   FTS_COLUMNS,
@@ -121,6 +122,12 @@ async function runDiff(csvBuffer: Buffer, onProgress?: ProgressFn): Promise<Diff
     let unchanged = 0;
     let nextReport = 5000;
 
+    // Collect the inserted rows (up to the history cap) so this import can be
+    // stored in the reconstructable history. Past the cap we stop collecting
+    // and the entry is recorded as truncated — bounding memory and storage.
+    const insertedRows: FieldRow[] = [];
+    let historyOverflow = false;
+
     const insertColsSql = `INSERT INTO ${LIVE_TABLE} (id, ${RECORD_INSERT_COLUMNS.join(", ")}) VALUES `;
     const rowPlaceholder = `(?, ${RECORD_INSERT_COLUMNS.map(() => "?").join(", ")})`;
     let insArgs: (string | number | null)[] = [];
@@ -148,6 +155,8 @@ async function runDiff(csvBuffer: Buffer, onProgress?: ProgressFn): Promise<Diff
       insArgs.push(newId, ...recordInsertValues(row));
       insCount++;
       inserted++;
+      if (insertedRows.length < HISTORY_ROW_CAP) insertedRows.push(row);
+      else historyOverflow = true;
       if (insCount >= INSERT_CHUNK) await flushInserts();
       if (inserted + unchanged >= nextReport) {
         onProgress?.(`Checked ${(inserted + unchanged).toLocaleString()} records; ${inserted.toLocaleString()} new so far (${secs()}s)…`);
@@ -164,6 +173,31 @@ async function runDiff(csvBuffer: Buffer, onProgress?: ProgressFn): Promise<Diff
     onProgress?.(
       `${inserted.toLocaleString()} new/changed, ${deleteIds.length.toLocaleString()} removed, ${unchanged.toLocaleString()} unchanged (${secs()}s). Applying…`
     );
+
+    // Capture the full content of the rows we're about to delete (for the
+    // reconstructable history) BEFORE they're gone — but only while we're still
+    // within the storage cap. Read through the transaction so it sees the
+    // pre-delete state.
+    const deletedRows: FieldRow[] = [];
+    const willStoreHistory =
+      !historyOverflow && inserted + deleteIds.length <= HISTORY_ROW_CAP;
+    if (willStoreHistory && deleteIds.length > 0) {
+      const cols = CSV_FIELDS.join(", ");
+      for (let i = 0; i < deleteIds.length; i += READ_PAGE) {
+        const chunk = deleteIds.slice(i, i + READ_PAGE);
+        const inList = chunk.map(() => "?").join(", ");
+        const res = await tx.execute({
+          sql: `SELECT ${cols} FROM ${LIVE_TABLE} WHERE id IN (${inList})`,
+          args: chunk,
+        });
+        for (const raw of res.rows) {
+          const r = raw as unknown as Record<string, string | null>;
+          const row: FieldRow = {};
+          for (const f of CSV_FIELDS) row[f] = r[f] ?? null;
+          deletedRows.push(row);
+        }
+      }
+    }
 
     // Apply deletes to the base table and both FTS indexes, in id chunks.
     for (let i = 0; i < deleteIds.length; i += DELETE_CHUNK) {
@@ -208,6 +242,20 @@ async function runDiff(csvBuffer: Buffer, onProgress?: ProgressFn): Promise<Diff
     await client.execute(`DROP TABLE IF EXISTS ${PREVIOUS_TABLE}`);
 
     const rowCount = previousRowCount + inserted - deleteIds.length;
+
+    // Record this import in the rolling history (best-effort; never fails the
+    // import). Only store the row payload when the change fit under the cap, so
+    // history stays small and reconstructable.
+    if (inserted > 0 || deleteIds.length > 0) {
+      await recordImport({
+        insertedCount: inserted,
+        deletedCount: deleteIds.length,
+        previousRowCount,
+        rowCount,
+        rows: willStoreHistory ? { inserted: insertedRows, deleted: deletedRows } : undefined,
+      });
+    }
+
     onProgress?.(`Done — the catalogue now has ${rowCount.toLocaleString()} records (${secs()}s).`);
     return {
       inserted,
