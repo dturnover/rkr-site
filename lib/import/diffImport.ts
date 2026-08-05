@@ -8,7 +8,7 @@ import {
   PREVIOUS_FTS_TABLE,
   PREVIOUS_CATALOG_FTS_TABLE,
 } from "@/lib/db/ddl";
-import { acquireLock, releaseLock, stampUpdatedNow } from "./atomicSwap";
+import { acquireLock, releaseLock, startLockHeartbeat, stampUpdatedNow } from "./atomicSwap";
 import { recordImport, HISTORY_ROW_CAP } from "./importHistory";
 import {
   CSV_FIELDS,
@@ -89,13 +89,16 @@ export async function importDiff(
   onProgress?: ProgressFn,
   opts: { budgetMs?: number; resume?: boolean } = {}
 ): Promise<DiffResult> {
-  // Serialize against any other import/restore (same lock the full rebuild
-  // uses). Each resumable pass takes the lock and releases it in finally, so
-  // consecutive passes (the client waits for each) never overlap.
-  await acquireLock();
+  // Serialize against any other import/restore. A pass keeps the lock fresh
+  // with a heartbeat; a resume pass waits (up to 2 min) for a stale lock left
+  // by a killed prior pass to expire, then takes over. So consecutive passes
+  // hand off cleanly whether the previous one returned or was killed.
+  await acquireLock({ maxWaitMs: 120_000, onWait: (m) => onProgress?.(m) });
+  const stopHeartbeat = startLockHeartbeat();
   try {
     return await runDiff(csvBuffer, onProgress, opts.budgetMs ?? APPLY_BUDGET_MS, opts.resume ?? false);
   } finally {
+    stopHeartbeat();
     await releaseLock();
   }
 }

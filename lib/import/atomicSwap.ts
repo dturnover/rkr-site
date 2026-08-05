@@ -30,35 +30,88 @@ import { buildStagingTables, type ProgressFn } from "./importCsv";
 // can land on genuinely separate instances with separate memory, so the
 // lock has to live in the database itself, not in process memory.
 const LOCK_TABLE = "import_lock";
-const STALE_LOCK_MS = 15 * 60 * 1000; // generous upper bound past the slowest observed import
+// A resumable import runs as a series of separate function invocations. If one
+// is KILLED at the platform time limit it can't release the lock, so the lock
+// must expire on its own quickly — but not so quickly that it's stolen from a
+// still-running pass. The holder heartbeats the lock every HEARTBEAT_MS; the
+// lock is considered abandoned only after STALE_LOCK_MS of NO heartbeat (a few
+// missed beats), which a live pass never reaches but a killed one hits fast.
+const HEARTBEAT_MS = 15_000;
+const STALE_LOCK_MS = 50_000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function acquireLock(): Promise<void> {
+async function ensureLockTable(): Promise<void> {
   const client = await getClient();
   await client.execute(
     `CREATE TABLE IF NOT EXISTS ${LOCK_TABLE} (id INTEGER PRIMARY KEY CHECK (id = 1), locked_at TEXT NOT NULL)`
   );
+}
 
-  const existing = await client.execute(`SELECT locked_at FROM ${LOCK_TABLE} WHERE id = 1`);
-  const lockedAt = existing.rows[0]?.locked_at as string | undefined;
-  if (lockedAt && Date.now() - new Date(lockedAt).getTime() > STALE_LOCK_MS) {
-    // Almost certainly an abandoned lock from a crashed/killed process —
-    // clear it rather than block imports forever.
-    await client.execute(`DELETE FROM ${LOCK_TABLE} WHERE id = 1`);
-  }
+/** Acquires the import lock, optionally waiting for a stale/abandoned lock to
+ * clear (used by the resumable diff so a follow-up pass can take over from a
+ * killed one). With maxWaitMs = 0 it fails fast if the lock is held and fresh. */
+export async function acquireLock(opts?: {
+  maxWaitMs?: number;
+  onWait?: (message: string) => void;
+}): Promise<void> {
+  const client = await getClient();
+  await ensureLockTable();
+  const deadline = Date.now() + (opts?.maxWaitMs ?? 0);
 
-  try {
-    await client.execute(`INSERT INTO ${LOCK_TABLE} (id, locked_at) VALUES (1, ?)`, [
-      new Date().toISOString(),
-    ]);
-  } catch {
-    throw new Error(
-      "Another import or restore is already in progress. Wait for it to finish and try again."
-    );
+  for (;;) {
+    const existing = await client.execute(`SELECT locked_at FROM ${LOCK_TABLE} WHERE id = 1`);
+    const lockedAt = existing.rows[0]?.locked_at as string | undefined;
+    const stale = !lockedAt || Date.now() - new Date(lockedAt).getTime() > STALE_LOCK_MS;
+
+    if (stale) {
+      if (lockedAt) await client.execute(`DELETE FROM ${LOCK_TABLE} WHERE id = 1`);
+      try {
+        await client.execute(`INSERT INTO ${LOCK_TABLE} (id, locked_at) VALUES (1, ?)`, [
+          new Date().toISOString(),
+        ]);
+        return;
+      } catch {
+        // Lost a race with another acquirer — fall through and retry/wait.
+      }
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error(
+        "Another import or restore is already in progress. Wait for it to finish and try again."
+      );
+    }
+    opts?.onWait?.("Waiting for the previous import pass to finish before continuing…");
+    await sleep(3000);
   }
+}
+
+async function touchLock(): Promise<void> {
+  const client = await getClient();
+  await client.execute({
+    sql: `UPDATE ${LOCK_TABLE} SET locked_at = ? WHERE id = 1`,
+    args: [new Date().toISOString()],
+  });
+}
+
+/** Starts heartbeating the lock so it stays fresh while this pass runs; returns
+ * a stop function to call when the pass ends. Self-scheduling (waits for each
+ * write before scheduling the next) so slow writes can't pile up. */
+export function startLockHeartbeat(): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const tick = async () => {
+    if (stopped) return;
+    await touchLock().catch(() => {});
+    if (!stopped) timer = setTimeout(tick, HEARTBEAT_MS);
+  };
+  timer = setTimeout(tick, HEARTBEAT_MS);
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
 }
 
 export async function releaseLock(): Promise<void> {
@@ -144,6 +197,7 @@ export async function importAndSwap(
   onProgress?: ProgressFn
 ): Promise<ImportResult> {
   await acquireLock();
+  const stopHeartbeat = startLockHeartbeat();
   try {
     const { rowCount } = await buildStagingTablesWithRetry(csvBuffer, onProgress);
 
@@ -190,6 +244,7 @@ export async function importAndSwap(
 
     return { rowCount, previousRowCount, lowRowCountWarning };
   } finally {
+    stopHeartbeat();
     await releaseLock();
   }
 }
@@ -199,6 +254,7 @@ export async function importAndSwap(
  * again — same property the old file-based version had. */
 export async function restorePrevious(): Promise<void> {
   await acquireLock();
+  const stopHeartbeat = startLockHeartbeat();
   try {
     if (!(await tableExists(PREVIOUS_TABLE))) {
       throw new Error("No previous database version to restore.");
@@ -237,6 +293,7 @@ export async function restorePrevious(): Promise<void> {
     }
     await stampUpdatedNow();
   } finally {
+    stopHeartbeat();
     await releaseLock();
   }
 }
