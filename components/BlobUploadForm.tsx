@@ -32,7 +32,31 @@ export default function BlobUploadForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blobUrl: blob.url }),
       });
-      const data = await res.json();
+
+      // A large import can outlast the serverless function's time limit. When
+      // that happens the platform — not our handler — returns a plain-text
+      // error page, so res.json() would throw a cryptic "Unexpected token"
+      // instead of telling dad what actually happened. Read the raw body and
+      // parse defensively.
+      const raw = await res.text();
+      let data: { rowCount?: number; lowRowCountWarning?: boolean; error?: string } | null = null;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = null;
+      }
+
+      if (!data) {
+        // Non-JSON response = the request was cut off (usually a timeout on a
+        // very large catalogue). The import often keeps running and finishes
+        // server-side, so point dad at reloading to check rather than blindly
+        // re-uploading.
+        setError(
+          "The catalogue is large and the import ran past the server's time limit before it could confirm. It may still be finishing in the background — wait about two minutes, then reload this page and check the track count under “Current Catalogue.” If it hasn't changed, try uploading once more."
+        );
+        setStatus("error");
+        return;
+      }
 
       if (!res.ok) {
         setError(data.error ?? "Import failed");
@@ -41,7 +65,7 @@ export default function BlobUploadForm() {
       }
 
       const params = new URLSearchParams({
-        imported: String(data.rowCount),
+        imported: String(data.rowCount ?? 0),
         warning: data.lowRowCountWarning ? "1" : "0",
       });
       router.push(`/admin?${params.toString()}`);

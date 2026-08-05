@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import iconv from "iconv-lite";
-import { parse } from "csv-parse/sync";
+import { parse } from "csv-parse";
 import { getClient } from "@/lib/db/client";
 import {
   buildDdl,
@@ -147,25 +147,26 @@ function decodeUpload(buffer: Buffer): string {
   }
 }
 
-export function parseCsvBuffer(buffer: Buffer): FieldRow[] {
+/** Streams a .csv upload row-by-row (header skipped, first 24 columns in
+ * CSV_FIELDS order) instead of materializing every row up front — so a very
+ * large catalogue never has to sit in memory all at once (see buildStagingTables). */
+async function* parseCsvRows(buffer: Buffer): AsyncGenerator<FieldRow> {
   const text = decodeUpload(buffer);
-  const rows: string[][] = parse(text, {
+  const parser = parse(text, {
     columns: false,
     from_line: 2, // skip header row
     skip_empty_lines: true,
     relax_column_count: true,
     bom: true,
   });
-
-  return rows
-    .filter((row) => row.some((cell) => cell && cell.trim() !== "")) // drop fully blank lines
-    .map((row) => {
-      const byField: FieldRow = {};
-      CSV_FIELDS.forEach((f, i) => {
-        byField[f] = nullIfBlank(row[i]);
-      });
-      return byField;
+  for await (const row of parser as AsyncIterable<string[]>) {
+    if (!row.some((cell) => cell && cell.trim() !== "")) continue; // drop fully blank lines
+    const byField: FieldRow = {};
+    CSV_FIELDS.forEach((f, i) => {
+      byField[f] = nullIfBlank(row[i]);
     });
+    yield byField;
+  }
 }
 
 // XLSX files are ZIP archives, which always start with the "PK\x03\x04" magic
@@ -200,18 +201,18 @@ function xlsxCellToString(v: unknown): string {
   return String(v);
 }
 
-/** Parses an uploaded .xlsx exactly the way parseCsvBuffer parses a .csv: the
- * first worksheet, header row skipped, first 24 columns in CSV_FIELDS order.
- * Uses exceljs's streaming reader so a 130k-row workbook is read row-by-row
- * instead of loading every cell into memory at once. */
-export async function parseXlsxBuffer(buffer: Buffer): Promise<FieldRow[]> {
+/** Streams an uploaded .xlsx row-by-row: the first worksheet, header row
+ * skipped, first 24 columns in CSV_FIELDS order. Uses exceljs's streaming
+ * reader AND yields each row rather than collecting them, so a 130k-row
+ * workbook stays at a couple hundred MB instead of holding every parsed row in
+ * memory at once (measured: ~200MB streamed vs ~700MB materialized). */
+async function* parseXlsxRows(buffer: Buffer): AsyncGenerator<FieldRow> {
   const ExcelJS = (await import("exceljs")).default;
   const reader = new ExcelJS.stream.xlsx.WorkbookReader(Readable.from(buffer), {
     worksheets: "emit",
     sharedStrings: "cache",
   });
 
-  const out: FieldRow[] = [];
   let sheetIndex = 0;
   for await (const worksheet of reader) {
     sheetIndex++;
@@ -228,16 +229,15 @@ export async function parseXlsxBuffer(buffer: Buffer): Promise<FieldRow[]> {
         byField[f] = cell;
         if (cell !== null) hasAny = true;
       });
-      if (hasAny) out.push(byField); // drop fully-blank rows
+      if (hasAny) yield byField; // drop fully-blank rows
     }
   }
-  return out;
 }
 
-/** Parses an uploaded catalogue file, accepting either the CSV export or the
+/** Streams an uploaded catalogue file, accepting either the CSV export or the
  * original Excel workbook — chosen by the file's bytes, not its name. */
-export async function parseUploadBuffer(buffer: Buffer): Promise<FieldRow[]> {
-  return isXlsxBuffer(buffer) ? parseXlsxBuffer(buffer) : parseCsvBuffer(buffer);
+function parseUploadRows(buffer: Buffer): AsyncGenerator<FieldRow> {
+  return isXlsxBuffer(buffer) ? parseXlsxRows(buffer) : parseCsvRows(buffer);
 }
 
 function insertPartsFor(byField: FieldRow): {
@@ -255,74 +255,47 @@ function insertPartsFor(byField: FieldRow): {
   };
 }
 
-// Re-applies the editor overlay onto the freshly-parsed CSV rows (Phase 3),
-// in memory, before anything is inserted — so the search index is built once
-// from the final merged data and the live records table needs no extra column.
-//
-// The conflict rule (per the site owner): dad's uploaded file wins for
-// anything it actually contains; an editor's value only lands where dad's
-// field is blank. Editor-added records that aren't in dad's file at all are
-// appended; if dad's new file now contains a record with the same identity,
-// dad's version wins and the editor copy is dropped (it's been "adopted").
-//
-// Records are matched by computeRecordKey (matrix number, else label no +
-// artist + title) — see lib/editor/overlay.ts.
-async function mergeOverlay(rows: FieldRow[]): Promise<FieldRow[]> {
-  const { fieldEdits, editorRecords } = await getOverlayForMerge();
-  if (fieldEdits.length === 0 && editorRecords.length === 0) return rows;
-
-  const byKey = new Map<string, FieldRow[]>();
-  for (const row of rows) {
-    const key = computeRecordKey(row);
-    const list = byKey.get(key);
-    if (list) list.push(row);
-    else byKey.set(key, [row]);
-  }
-
-  const editable = new Set<string>(EDITABLE_FIELDS);
-  for (const e of fieldEdits) {
-    if (e.value == null || !editable.has(e.field)) continue;
-    const targets = byKey.get(e.record_key);
-    if (!targets) continue; // dad's file has no such record; nothing to attach to
-    for (const row of targets) {
-      // Fill only where dad's field is blank — his non-empty value wins.
-      if (nullIfBlank(row[e.field]) == null) row[e.field] = e.value;
-    }
-  }
-
-  for (const er of editorRecords) {
-    if (byKey.has(er.record_key)) continue; // dad's file now has it — his version wins
-    const row: FieldRow = {};
-    for (const f of CSV_FIELDS) row[f] = null;
-    for (const f of EDITABLE_FIELDS) row[f] = nullIfBlank(er.data[f] ?? null);
-    rows.push(row);
-  }
-
-  return rows;
-}
-
 const CHUNK_SIZE = 500;
-// Grouping several chunks into one tx.batch() call turns that many
-// round trips into one. Against a remote Turso database, many small
-// sequential round trips were both slow and fragile — a single transient
-// timeout on any one of them failed the whole import (confirmed by
-// testing against a real Turso database). Batching cuts the round-trip
-// count by this factor.
+// Grouping several chunks into one batch() call turns that many round trips
+// into one. Against a remote Turso database, many small sequential round trips
+// were both slow and fragile — a single transient timeout on any one of them
+// failed the whole import (confirmed by testing against a real Turso database).
+// Batching cuts the round-trip count by this factor.
 const CHUNKS_PER_BATCH = 10;
 
 /** Builds a fresh "staging" generation of the data (records_new /
- * records_new_fts) from a CSV buffer, inside the database the app is
+ * records_new_fts) from a CSV or XLSX buffer, inside the database the app is
  * already connected to (local file or Turso — same code either way). Does
  * not touch the live `records` table; the caller (atomicSwap.ts) is
  * responsible for swapping the staging tables into place. Ids are assigned
  * explicitly (not via AUTOINCREMENT) so the same id can be used later to
- * populate the FTS table by id, not transmitted a second time. */
+ * populate the FTS table by id, not transmitted a second time.
+ *
+ * The upload is STREAMED: rows are parsed and inserted in batches as they go,
+ * so the whole catalogue is never held in memory at once (a 135k-row .xlsx
+ * peaked at ~1.2GB when fully materialized — enough to OOM a serverless
+ * function and return a non-JSON platform error to the browser; streaming
+ * keeps it near ~200-300MB). The editor overlay is loaded up front (it's
+ * editor-generated, so small) and applied to each row as it streams past. */
 export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount: number }> {
-  // Parse dad's file, then re-apply the editor overlay on top (fills blanks,
-  // appends editor-added records) — see mergeOverlay. On a database with no
-  // editor activity this is a no-op and the import is unchanged.
-  const rows = await mergeOverlay(await parseUploadBuffer(csvBuffer));
   const client = await getClient();
+
+  // The editor overlay, indexed by record key. Field edits fill only blanks
+  // (dad's uploaded value always wins); editor-added records dad's file doesn't
+  // contain are appended at the end, while any the file now contains are
+  // dropped (his version wins). Records are matched by computeRecordKey (matrix
+  // number, else label no + artist + title) — see lib/editor/overlay.ts.
+  const { fieldEdits, editorRecords } = await getOverlayForMerge();
+  const editable = new Set<string>(EDITABLE_FIELDS);
+  const fieldEditsByKey = new Map<string, { field: string; value: string }[]>();
+  for (const e of fieldEdits) {
+    if (e.value == null || !editable.has(e.field)) continue;
+    const list = fieldEditsByKey.get(e.record_key);
+    if (list) list.push({ field: e.field, value: e.value });
+    else fieldEditsByKey.set(e.record_key, [{ field: e.field, value: e.value }]);
+  }
+  const editorRecordsByKey = new Map<string, Record<string, string | null>>();
+  for (const er of editorRecords) editorRecordsByKey.set(er.record_key, er.data);
 
   await client.executeMultiple(`
     DROP TABLE IF EXISTS ${STAGING_FTS_TABLE};
@@ -332,65 +305,85 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
   `);
 
   const allColumns = [...INSERT_COLUMNS, "year_sort", ...NORM_COLUMNS];
+  const rowPlaceholder = `(?, ${allColumns.map(() => "?").join(", ")})`;
   const insertSql = (n: number) =>
     `INSERT INTO ${STAGING_TABLE} (id, ${allColumns.join(", ")}) VALUES ${Array(n)
-      .fill(`(?, ${allColumns.map(() => "?").join(", ")})`)
+      .fill(rowPlaceholder)
       .join(", ")}`;
 
-  const tx = await client.transaction("write");
-  try {
-    for (let i = 0; i < rows.length; i += CHUNK_SIZE * CHUNKS_PER_BATCH) {
-      const statements: { sql: string; args: (string | number | null)[] }[] = [];
+  // Insert without a single long-held interactive transaction: now that
+  // parsing interleaves with the writes, a write transaction left open across
+  // the (multi-second) parse gaps risks being timed out server-side by Turso.
+  // Each batch is its own autocommit instead — safe because this only builds
+  // the *staging* generation; the live swap in atomicSwap.ts is the part that
+  // must be atomic, and a failed/partial build is simply dropped and rebuilt on
+  // the next retry (buildStagingTablesWithRetry).
+  let id = 0;
+  let chunkArgs: (string | number | null)[] = [];
+  let chunkCount = 0;
+  let batch: { sql: string; args: (string | number | null)[] }[] = [];
 
-      for (
-        let j = i;
-        j < Math.min(i + CHUNK_SIZE * CHUNKS_PER_BATCH, rows.length);
-        j += CHUNK_SIZE
-      ) {
-        const chunk = rows.slice(j, j + CHUNK_SIZE);
-        const n = chunk.length;
-
-        const args: (string | number | null)[] = [];
-        chunk.forEach((byField, k) => {
-          const id = j + k + 1;
-          const { values, yearSort, norms } = insertPartsFor(byField);
-          args.push(id, ...values, yearSort, ...norms);
-        });
-
-        statements.push({ sql: insertSql(n), args });
-      }
-
-      await tx.batch(statements);
-
-      // Local SQLite bindings execute synchronously under the hood despite
-      // the Promise-based API — with no true I/O wait, a long chain of
-      // awaited calls never yields back to Node's event loop, so incoming
-      // requests queue up and the whole site hangs for the entire import
-      // (confirmed by testing: ~9s of dead air on every other route while
-      // an import ran). Yielding via setImmediate between batches forces a
-      // real event-loop tick, so pending requests get serviced promptly.
-      await new Promise((resolve) => setImmediate(resolve));
+  const sealChunk = () => {
+    if (chunkCount === 0) return;
+    batch.push({ sql: insertSql(chunkCount), args: chunkArgs });
+    chunkArgs = [];
+    chunkCount = 0;
+  };
+  const flushBatch = async () => {
+    if (batch.length === 0) return;
+    await client.batch(batch, "write");
+    batch = [];
+    // Yield a real event-loop tick between batches so the site stays
+    // responsive during a big import (local SQLite bindings otherwise run the
+    // whole import synchronously and starve incoming requests).
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+  const addRow = async (byField: FieldRow) => {
+    id++;
+    const { values, yearSort, norms } = insertPartsFor(byField);
+    chunkArgs.push(id, ...values, yearSort, ...norms);
+    chunkCount++;
+    if (chunkCount >= CHUNK_SIZE) {
+      sealChunk();
+      if (batch.length >= CHUNKS_PER_BATCH) await flushBatch();
     }
+  };
 
-    // Populate the FTS index from the table we just filled, entirely
-    // server-side — no need to transmit title/artist/notes text over the
-    // network a second time.
-    await tx.execute(
-      `INSERT INTO ${STAGING_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")})
-       SELECT id, ${FTS_COLUMNS.join(", ")} FROM ${STAGING_TABLE}`
-    );
-
-    const catalogFtsSourceExprs = CATALOG_FTS_COLUMNS.map((c) => CATALOG_FTS_SOURCE_EXPR[c]);
-    await tx.execute(
-      `INSERT INTO ${STAGING_CATALOG_FTS_TABLE} (rowid, ${CATALOG_FTS_COLUMNS.join(", ")})
-       SELECT id, ${catalogFtsSourceExprs.join(", ")} FROM ${STAGING_TABLE}`
-    );
-
-    await tx.commit();
-  } catch (err) {
-    await tx.rollback();
-    throw err;
+  for await (const row of parseUploadRows(csvBuffer)) {
+    const key = computeRecordKey(row);
+    const edits = fieldEditsByKey.get(key);
+    if (edits) {
+      for (const { field, value } of edits) {
+        if (nullIfBlank(row[field]) == null) row[field] = value; // fill blanks only
+      }
+    }
+    // Dad's file contains this record → his version wins; drop the editor copy.
+    if (editorRecordsByKey.size > 0) editorRecordsByKey.delete(key);
+    await addRow(row);
   }
 
-  return { rowCount: rows.length };
+  // Append editor-added records not present in dad's file.
+  for (const data of editorRecordsByKey.values()) {
+    const row: FieldRow = {};
+    for (const f of CSV_FIELDS) row[f] = null;
+    for (const f of EDITABLE_FIELDS) row[f] = nullIfBlank(data[f] ?? null);
+    await addRow(row);
+  }
+
+  sealChunk();
+  await flushBatch();
+
+  // Populate both FTS indexes from the table we just filled, entirely
+  // server-side — no need to transmit the text over the network a second time.
+  await client.execute(
+    `INSERT INTO ${STAGING_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")})
+     SELECT id, ${FTS_COLUMNS.join(", ")} FROM ${STAGING_TABLE}`
+  );
+  const catalogFtsSourceExprs = CATALOG_FTS_COLUMNS.map((c) => CATALOG_FTS_SOURCE_EXPR[c]);
+  await client.execute(
+    `INSERT INTO ${STAGING_CATALOG_FTS_TABLE} (rowid, ${CATALOG_FTS_COLUMNS.join(", ")})
+     SELECT id, ${catalogFtsSourceExprs.join(", ")} FROM ${STAGING_TABLE}`
+  );
+
+  return { rowCount: id };
 }
