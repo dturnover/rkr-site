@@ -288,21 +288,23 @@ const CHUNKS_PER_BATCH = 10;
  * keeps it near ~200-300MB). The editor overlay is loaded up front (it's
  * editor-generated, so small) and applied to each row as it streams past. */
 /** Yields the FINAL target set of records for an import: every row from the
- * uploaded file with the editor overlay's field-edits applied (filling blanks
- * only — dad's value always wins), followed by any editor-added records the
- * file doesn't contain. This is the single source of truth for "what the
- * catalogue should be" — used by BOTH the full rebuild (buildStagingTables) and
- * the incremental diff (lib/import/diffImport.ts), so the two can never
- * disagree about the target state. Streamed, so memory stays flat. */
+ * uploaded file with the editor overlay's field-edits applied ON TOP (a correction
+ * wins over dad's value), followed by any editor-added records the file doesn't
+ * contain. This is the single source of truth for "what the catalogue should be"
+ * — used by BOTH the full rebuild (buildStagingTables) and the incremental diff
+ * (lib/import/diffImport.ts), so the two can never disagree about the target
+ * state. Streamed, so memory stays flat. */
 export async function* streamTargetRows(
   csvBuffer: Buffer,
   onProgress?: ProgressFn
 ): AsyncGenerator<FieldRow> {
-  // The editor overlay, indexed by record key. Field edits fill only blanks
-  // (dad's uploaded value always wins); editor-added records the file doesn't
-  // contain are appended at the end, while any the file now contains are
-  // dropped (his version wins). Records are matched by computeRecordKey (matrix
-  // number, else label no + artist + title) — see lib/editor/overlay.ts.
+  // The editor overlay, indexed by record key. Field edits (including approved
+  // AI typo fixes, which are stored as edits) OVERRIDE the uploaded value, so a
+  // correction made on the site isn't wiped out when dad re-uploads his older
+  // spreadsheet that still has the old value. Editor-added records the file
+  // doesn't contain are appended at the end; any the file now contains are
+  // dropped (his version wins for whole new records). Records are matched by
+  // computeRecordKey (matrix number, else label no + artist + title).
   const { fieldEdits, editorRecords } = await getOverlayForMerge();
   const editable = new Set<string>(EDITABLE_FIELDS);
   const fieldEditsByKey = new Map<string, { field: string; value: string }[]>();
@@ -320,7 +322,9 @@ export async function* streamTargetRows(
     const edits = fieldEditsByKey.get(key);
     if (edits) {
       for (const { field, value } of edits) {
-        if (nullIfBlank(row[field]) == null) row[field] = value; // fill blanks only
+        // Correction wins: overwrite dad's (possibly stale) value with the
+        // edited one so on-site fixes propagate through every re-upload.
+        row[field] = value;
       }
     }
     // Dad's file contains this record → his version wins; drop the editor copy.
