@@ -307,12 +307,16 @@ export async function* streamTargetRows(
   // computeRecordKey (matrix number, else label no + artist + title).
   const { fieldEdits, editorRecords } = await getOverlayForMerge();
   const editable = new Set<string>(EDITABLE_FIELDS);
-  const fieldEditsByKey = new Map<string, { field: string; value: string }[]>();
+  const fieldEditsByKey = new Map<
+    string,
+    { field: string; value: string; base: string | null; hasBase: boolean }[]
+  >();
   for (const e of fieldEdits) {
     if (e.value == null || !editable.has(e.field)) continue;
+    const entry = { field: e.field, value: e.value, base: e.base_value, hasBase: e.has_base };
     const list = fieldEditsByKey.get(e.record_key);
-    if (list) list.push({ field: e.field, value: e.value });
-    else fieldEditsByKey.set(e.record_key, [{ field: e.field, value: e.value }]);
+    if (list) list.push(entry);
+    else fieldEditsByKey.set(e.record_key, [entry]);
   }
   const editorRecordsByKey = new Map<string, Record<string, string | null>>();
   for (const er of editorRecords) editorRecordsByKey.set(er.record_key, er.data);
@@ -321,10 +325,16 @@ export async function* streamTargetRows(
     const key = computeRecordKey(row);
     const edits = fieldEditsByKey.get(key);
     if (edits) {
-      for (const { field, value } of edits) {
-        // Correction wins: overwrite dad's (possibly stale) value with the
-        // edited one so on-site fixes propagate through every re-upload.
-        row[field] = value;
+      for (const { field, value, base, hasBase } of edits) {
+        // Three-way merge between dad's uploaded value, the base (his value when
+        // the edit was made), and the on-site correction:
+        //   • no known base (legacy edit) → correction wins (safe default)
+        //   • dad's value unchanged from base → correction wins (propagates)
+        //   • dad changed it to something genuinely new → dad wins (leave it)
+        const dadValue = nullIfBlank(row[field]);
+        if (!hasBase || dadValue === base) row[field] = value;
+        // else: dad deliberately changed this field since the edit — keep his
+        // new value; the now-superseded edit simply stops applying.
       }
     }
     // Dad's file contains this record → his version wins; drop the editor copy.

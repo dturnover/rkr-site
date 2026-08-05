@@ -17,18 +17,33 @@ import { PAGE_SIZE } from "@/lib/queries/shared";
 
 let ensured: Promise<void> | null = null;
 
+async function addColumnIfMissing(
+  table: string,
+  column: string,
+  decl: string
+): Promise<void> {
+  const client = await getClient();
+  const info = await client.execute(`PRAGMA table_info(${table})`);
+  if (info.rows.some((r) => String((r as unknown as { name: string }).name) === column)) return;
+  await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
 function ensureOverlayTables(): Promise<void> {
   if (!ensured) {
     ensured = (async () => {
       const client = await getClient();
       await client.executeMultiple(`
         CREATE TABLE IF NOT EXISTS editor_field_edits (
-          record_key  TEXT NOT NULL,
-          field       TEXT NOT NULL,
-          value       TEXT,
-          editor_id   INTEGER,
-          editor_name TEXT,
-          updated_at  TEXT NOT NULL,
+          record_key   TEXT NOT NULL,
+          field        TEXT NOT NULL,
+          value        TEXT,
+          base_value   TEXT,
+          has_base     INTEGER NOT NULL DEFAULT 0,
+          record_label TEXT,
+          record_id    INTEGER,
+          editor_id    INTEGER,
+          editor_name  TEXT,
+          updated_at   TEXT NOT NULL,
           PRIMARY KEY (record_key, field)
         );
         CREATE TABLE IF NOT EXISTS editor_records (
@@ -54,6 +69,34 @@ function ensureOverlayTables(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS idx_modlog_key ON modification_log(record_key);
         CREATE INDEX IF NOT EXISTS idx_modlog_created ON modification_log(created_at);
+      `);
+
+      // Migrate pre-existing editor_field_edits tables that lack the new
+      // columns (added for the 3-way merge and the edits admin view).
+      await addColumnIfMissing("editor_field_edits", "base_value", "TEXT");
+      await addColumnIfMissing("editor_field_edits", "has_base", "INTEGER NOT NULL DEFAULT 0");
+      await addColumnIfMissing("editor_field_edits", "record_label", "TEXT");
+      await addColumnIfMissing("editor_field_edits", "record_id", "INTEGER");
+
+      // Backfill the "base" (dad's value when the edit was first made) for
+      // existing edits from the earliest modification-log entry for that
+      // record+field. Only marks has_base=1 where such an entry exists; edits
+      // without a known base fall back to "correction always wins".
+      await client.execute(`
+        UPDATE editor_field_edits
+           SET base_value = (
+                 SELECT ml.old_value FROM modification_log ml
+                  WHERE ml.record_key = editor_field_edits.record_key
+                    AND ml.field = editor_field_edits.field
+                  ORDER BY ml.id ASC LIMIT 1
+               ),
+               has_base = 1
+         WHERE has_base = 0
+           AND EXISTS (
+                 SELECT 1 FROM modification_log ml
+                  WHERE ml.record_key = editor_field_edits.record_key
+                    AND ml.field = editor_field_edits.field
+               )
       `);
     })().catch((err) => {
       ensured = null;
@@ -190,6 +233,10 @@ export async function applyFieldEdits(
   if (changes.length === 0) return 0;
 
   const now = new Date().toISOString();
+  // A human-readable label for the edits admin view, captured now while we have
+  // the record in hand (edits are keyed by content, not a joinable id).
+  const recordLabel =
+    [nullIfBlank(current.artist), nullIfBlank(current.title)].filter(Boolean).join(" – ") || null;
   const statements: { sql: string; args: (string | number | null)[] }[] = [];
 
   for (const { field, oldValue, newValue } of changes) {
@@ -206,13 +253,20 @@ export async function applyFieldEdits(
     // editor-added record carries its own full state in editor_records,
     // refreshed below).
     if (!isEditorRecord) {
+      // base_value / has_base capture dad's value at the moment of the FIRST
+      // edit (the INSERT). On a later edit to the same field it's a conflict, so
+      // DO UPDATE deliberately leaves base_value/has_base/record_label untouched
+      // — the base always reflects dad's original value, which is what the
+      // 3-way import merge compares his new uploads against.
       statements.push({
-        sql: `INSERT INTO editor_field_edits (record_key, field, value, editor_id, editor_name, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?)
+        sql: `INSERT INTO editor_field_edits
+                (record_key, field, value, base_value, has_base, record_label, record_id, editor_id, editor_name, updated_at)
+              VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
               ON CONFLICT(record_key, field) DO UPDATE SET
-                value = excluded.value, editor_id = excluded.editor_id,
+                value = excluded.value, record_label = excluded.record_label,
+                record_id = excluded.record_id, editor_id = excluded.editor_id,
                 editor_name = excluded.editor_name, updated_at = excluded.updated_at`,
-        args: [key, field, newValue, editorIdArg(editor.uid), editor.name, now],
+        args: [key, field, newValue, oldValue, recordLabel, recordId, editorIdArg(editor.uid), editor.name, now],
       });
     }
 
@@ -324,18 +378,28 @@ export async function getRecordLog(recordKey: string, limit = 50): Promise<LogEn
  * is fine. Ensures the tables exist first, so a first-ever import on a fresh
  * database just gets two empty lists and behaves exactly as before. */
 export async function getOverlayForMerge(): Promise<{
-  fieldEdits: { record_key: string; field: string; value: string | null }[];
+  fieldEdits: {
+    record_key: string;
+    field: string;
+    value: string | null;
+    base_value: string | null;
+    has_base: boolean;
+  }[];
   editorRecords: { record_key: string; data: Record<string, string | null> }[];
 }> {
   await ensureOverlayTables();
   const client = await getClient();
-  const fe = await client.execute(`SELECT record_key, field, value FROM editor_field_edits`);
+  const fe = await client.execute(
+    `SELECT record_key, field, value, base_value, has_base FROM editor_field_edits`
+  );
   const er = await client.execute(`SELECT record_key, data FROM editor_records`);
   return {
     fieldEdits: fe.rows.map((r) => ({
       record_key: String(r.record_key),
       field: String(r.field),
       value: r.value == null ? null : String(r.value),
+      base_value: r.base_value == null ? null : String(r.base_value),
+      has_base: Number(r.has_base) === 1,
     })),
     editorRecords: er.rows.map((r) => {
       let data: Record<string, string | null> = {};
@@ -347,6 +411,98 @@ export async function getOverlayForMerge(): Promise<{
       return { record_key: String(r.record_key), data };
     }),
   };
+}
+
+export interface FieldEditRow {
+  record_key: string;
+  field: string;
+  value: string | null;
+  base_value: string | null;
+  has_base: boolean;
+  record_label: string | null;
+  record_id: number | null;
+  editor_name: string | null;
+  updated_at: string;
+}
+
+/** All active field overrides, newest first — for the admin "Edits" view. */
+export async function listFieldEdits(): Promise<FieldEditRow[]> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  const res = await client.execute(
+    `SELECT record_key, field, value, base_value, has_base, record_label, record_id, editor_name, updated_at
+     FROM editor_field_edits ORDER BY updated_at DESC`
+  );
+  return res.rows.map((r) => ({
+    record_key: String(r.record_key),
+    field: String(r.field),
+    value: r.value == null ? null : String(r.value),
+    base_value: r.base_value == null ? null : String(r.base_value),
+    has_base: Number(r.has_base) === 1,
+    record_label: r.record_label == null ? null : String(r.record_label),
+    record_id: r.record_id == null ? null : Number(r.record_id),
+    editor_name: r.editor_name == null ? null : String(r.editor_name),
+    updated_at: String(r.updated_at),
+  }));
+}
+
+/** Removes a field override: reverts the live record's field back to dad's
+ * original value (the stored base) when we can still locate that record, then
+ * deletes the edit so it no longer re-applies on import. Returns whether the
+ * live record was reverted in place (false just means it'll correct on the next
+ * upload). */
+export async function removeFieldEdit(recordKey: string, field: string): Promise<boolean> {
+  await ensureOverlayTables();
+  if (!EDITABLE_FIELDS.includes(field as EditableField)) return false;
+  const client = await getClient();
+
+  const res = await client.execute({
+    sql: `SELECT value, base_value, record_id FROM editor_field_edits WHERE record_key = ? AND field = ? LIMIT 1`,
+    args: [recordKey, field],
+  });
+  const edit = res.rows[0];
+  if (!edit) return false;
+  const baseValue = edit.base_value == null ? null : String(edit.base_value);
+  const recordId = edit.record_id == null ? null : Number(edit.record_id);
+
+  const statements: { sql: string; args: (string | number | null)[] }[] = [];
+  let revertedLive = false;
+
+  // Only touch the live record if the stored id still points at the same record
+  // (ids can be reassigned by a full rebuild). Verify by content key first.
+  if (recordId != null) {
+    const cur = await client.execute({
+      sql: `SELECT ${EDITABLE_FIELDS.join(", ")} FROM records WHERE id = ? LIMIT 1`,
+      args: [recordId],
+    });
+    const current = cur.rows[0] as unknown as Record<EditableField, string | null> | undefined;
+    if (current && computeRecordKey(current) === recordKey) {
+      const setPairs: [string, string | number | null][] = [[field, baseValue]];
+      const f = field as EditableField;
+      if (NORM_MAP[f]) setPairs.push([NORM_MAP[f]!, baseValue ? baseValue.toLowerCase() : null]);
+      if (f === "year") setPairs.push(["year_sort", deriveYearSort(baseValue)]);
+      statements.push({
+        sql: `UPDATE records SET ${setPairs.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ?`,
+        args: [...setPairs.map(([, v]) => v), recordId],
+      });
+      statements.push(...ftsRefreshStatements(recordId));
+      statements.push({
+        sql: `INSERT INTO modification_log
+                (record_key, record_id, action, field, old_value, new_value, editor_id, editor_name, created_at)
+              VALUES (?, ?, 'reverted', ?, ?, ?, NULL, ?, ?)`,
+        args: [recordKey, recordId, field, String(edit.value ?? ""), baseValue, "admin (edit removed)", new Date().toISOString()],
+      });
+      revertedLive = true;
+    }
+  }
+
+  statements.push({
+    sql: `DELETE FROM editor_field_edits WHERE record_key = ? AND field = ?`,
+    args: [recordKey, field],
+  });
+
+  await client.batch(statements, "write");
+  return revertedLive;
 }
 
 export interface GlobalLogEntry extends LogEntry {
