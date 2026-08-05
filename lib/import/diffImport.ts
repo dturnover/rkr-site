@@ -49,7 +49,10 @@ import {
 // allows: 800 rows × ~34 columns ≈ 27k binds, comfortably under the cap, and
 // far fewer round trips than small chunks. Reads are cheaper, so page them big
 // too, to cut the number of fingerprint round trips.
-const DELETE_CHUNK = 800; // ids per DELETE ... WHERE id IN (...) statement
+// Deletes carry only row ids, so pack many more per round trip than inserts
+// (which carry ~34 columns each). Fewer round trips ≈ less wall-clock, since
+// Turso write cost is latency-dominated.
+const DELETE_CHUNK = 4000; // ids per DELETE ... WHERE id IN (...) statement
 const INSERT_CHUNK = 800; // rows per multi-row INSERT statement
 const READ_PAGE = 20000; // rows per page when fingerprinting the live catalogue
 

@@ -66,7 +66,7 @@ export default function BlobUploadForm() {
     // itself incomplete; we simply call again with resume=true until it's done.
     // Each pass streams NDJSON progress events we render live.
     setStatus("importing");
-    const MAX_PASSES = 60; // generous safety cap against an unexpected loop
+    const MAX_PASSES = 100; // generous cap; also absorbs the occasional retry
 
     type PassResult =
       | { kind: "complete"; rowCount: number; lowRowCountWarning: boolean }
@@ -118,10 +118,21 @@ export default function BlobUploadForm() {
       return terminal ?? { kind: "cutoff" };
     }
 
+    const sleep = (msWait: number) => new Promise((r) => setTimeout(r, msWait));
+    let transportErrors = 0; // consecutive network/transport blips
+
     try {
       for (let pass = 1; pass <= MAX_PASSES; pass++) {
         if (pass > 1) addLine(`Continuing (pass ${pass})…`);
-        const result = await runPass(pass > 1);
+
+        let result: PassResult;
+        try {
+          result = await runPass(pass > 1);
+        } catch (err) {
+          // fetch/stream threw (dropped connection, DNS, etc.) — treat as a
+          // transport blip and retry, since server-side progress is committed.
+          result = { kind: "http-error", message: err instanceof Error ? err.message : String(err) };
+        }
 
         if (result.kind === "complete") {
           addLine("Import finished successfully. Refreshing…");
@@ -133,18 +144,39 @@ export default function BlobUploadForm() {
           router.refresh();
           return;
         }
-        if (result.kind === "error" || result.kind === "http-error") {
+
+        // A server-REPORTED error (bad file, DB failure) is a real stop.
+        if (result.kind === "error") {
           addLine(result.message, "error");
           setError(result.message);
           setStatus("error");
           return;
         }
+
+        // A transport error (network blip, dropped fetch) is NOT fatal — every
+        // completed batch is already saved, so wait briefly and resume. Give up
+        // only after several in a row.
+        if (result.kind === "http-error") {
+          transportErrors++;
+          if (transportErrors >= 8) {
+            const m = "Too many network errors in a row. Your progress is saved — reload the page and upload the same file again to continue where it left off.";
+            addLine(m, "error");
+            setError(m);
+            setStatus("error");
+            return;
+          }
+          addLine(`Network hiccup (${result.message}). Retrying in a few seconds…`);
+          await sleep(4000);
+          continue;
+        }
+
         // incomplete or cutoff → committed progress persists; loop to resume.
+        transportErrors = 0;
         if (result.kind === "cutoff") {
           addLine("Connection dropped mid-import — resuming from where it left off…");
         }
       }
-      const capMsg = "Stopped after many passes without finishing. Some progress was saved; reload and check the track count, then upload again to continue.";
+      const capMsg = "Stopped after many passes. Progress is saved — reload and upload the same file again to continue.";
       addLine(capMsg, "error");
       setError(capMsg);
       setStatus("error");
