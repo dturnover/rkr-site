@@ -349,6 +349,12 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     }
   };
 
+  // Phase timings surface in the Vercel function logs so a stuck import can be
+  // pinned to parse+insert vs. FTS. `next` marks the row at which to log again.
+  const bt0 = Date.now();
+  const btms = () => `${((Date.now() - bt0) / 1000).toFixed(1)}s`;
+  let next = 20000;
+
   for await (const row of parseUploadRows(csvBuffer)) {
     const key = computeRecordKey(row);
     const edits = fieldEditsByKey.get(key);
@@ -360,6 +366,10 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     // Dad's file contains this record → his version wins; drop the editor copy.
     if (editorRecordsByKey.size > 0) editorRecordsByKey.delete(key);
     await addRow(row);
+    if (id >= next) {
+      console.log(`[import] inserted ${id} rows at ${btms()}`);
+      next += 20000;
+    }
   }
 
   // Append editor-added records not present in dad's file.
@@ -372,6 +382,7 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
 
   sealChunk();
   await flushBatch();
+  console.log(`[import] all ${id} rows inserted at ${btms()}; building search indexes`);
 
   // Populate both FTS indexes from the table we just filled, entirely
   // server-side — no need to transmit the text over the network a second time.
@@ -384,6 +395,7 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     `INSERT INTO ${STAGING_CATALOG_FTS_TABLE} (rowid, ${CATALOG_FTS_COLUMNS.join(", ")})
      SELECT id, ${catalogFtsSourceExprs.join(", ")} FROM ${STAGING_TABLE}`
   );
+  console.log(`[import] search indexes built at ${btms()}`);
 
   return { rowCount: id };
 }

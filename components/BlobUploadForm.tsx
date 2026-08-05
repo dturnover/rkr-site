@@ -20,17 +20,29 @@ export default function BlobUploadForm() {
 
     setError(null);
     setStatus("uploading");
+
+    // Step 1: upload the file straight to Vercel Blob. Isolated in its own
+    // try so a failure here is clearly labelled "upload" (vs. the import step).
+    let blobUrl: string;
     try {
       const blob = await upload(file.name, file, {
         access: "public",
         handleUploadUrl: "/api/admin/blob-token",
       });
+      blobUrl = blob.url;
+    } catch (err) {
+      setError(`Upload step failed: ${err instanceof Error ? err.message : String(err)}`);
+      setStatus("error");
+      return;
+    }
 
-      setStatus("importing");
+    // Step 2: import the uploaded file.
+    setStatus("importing");
+    try {
       const res = await fetch("/api/admin/import-from-blob", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl: blob.url }),
+        body: JSON.stringify({ blobUrl }),
       });
 
       // A large import can outlast the serverless function's time limit. When
@@ -48,18 +60,21 @@ export default function BlobUploadForm() {
 
       if (!data) {
         // Non-JSON response = the request was cut off (usually a timeout on a
-        // very large catalogue). The import often keeps running and finishes
-        // server-side, so point dad at reloading to check rather than blindly
-        // re-uploading.
+        // very large catalogue). Surface the actual status and a snippet of the
+        // response so a screenshot pins down the cause; the import may still be
+        // finishing server-side, so also tell dad to reload and check.
+        const snippet = raw.replace(/\s+/g, " ").trim().slice(0, 160);
         setError(
-          "The catalogue is large and the import ran past the server's time limit before it could confirm. It may still be finishing in the background — wait about two minutes, then reload this page and check the track count under “Current Catalogue.” If it hasn't changed, try uploading once more."
+          `The import didn't return a normal result (HTTP ${res.status}). ` +
+            (snippet ? `Server said: “${snippet}”. ` : "") +
+            "A very large catalogue can run past the time limit; it may still be finishing — wait ~2 minutes, reload this page, and check the track count under “Current Catalogue” before trying again."
         );
         setStatus("error");
         return;
       }
 
       if (!res.ok) {
-        setError(data.error ?? "Import failed");
+        setError(`Import failed (HTTP ${res.status}): ${data.error ?? "unknown error"}`);
         setStatus("error");
         return;
       }
@@ -71,7 +86,7 @@ export default function BlobUploadForm() {
       router.push(`/admin?${params.toString()}`);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(`Import step failed: ${err instanceof Error ? err.message : String(err)}`);
       setStatus("error");
     }
   }

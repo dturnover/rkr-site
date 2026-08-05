@@ -44,13 +44,25 @@ export async function POST(request: NextRequest) {
   }
   const safeUrl = parsed.href;
 
+  // Phase timings go to the Vercel function logs (Deployments → the deployment
+  // → Functions/Logs). If an import ever dies on a real catalogue, these show
+  // exactly how far it got — fetch, parse+insert, or FTS — and the real error,
+  // which the browser can't always see when the platform kills the function.
+  const t0 = Date.now();
+  const ms = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
   try {
+    console.log(`[import] start; fetching blob`);
     const res = await fetch(safeUrl);
     if (!res.ok) {
+      console.error(`[import] blob fetch failed status=${res.status} at ${ms()}`);
       return NextResponse.json({ error: `Could not fetch uploaded file (${res.status})` }, { status: 502 });
     }
     const buffer = Buffer.from(await res.arrayBuffer());
+    console.log(`[import] fetched ${(buffer.length / 1e6).toFixed(1)}MB at ${ms()}; importing`);
+
     const result = await importAndSwap(buffer);
+    console.log(`[import] importAndSwap done rows=${result.rowCount} at ${ms()}`);
+
     // Flush all catalogue caches (records, search, browse, status) so the new
     // data is served immediately rather than after each cache's TTL.
     revalidateTag(CATALOGUE_TAG, { expire: 0 });
@@ -60,6 +72,7 @@ export async function POST(request: NextRequest) {
       // cleaned up. The import itself already succeeded.
     });
 
+    console.log(`[import] complete at ${ms()}`);
     return NextResponse.json({
       rowCount: result.rowCount,
       previousRowCount: result.previousRowCount,
@@ -67,6 +80,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Import failed";
+    console.error(`[import] FAILED at ${ms()}: ${message}`, err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
