@@ -3,6 +3,7 @@ import ResultsTable from "@/components/ResultsTable";
 import { advancedSearch, hasAnyField, type AdvancedSearchFields } from "@/lib/queries/search";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { allowSearch } from "@/lib/searchThrottle";
 
 // Single-field substring LIKE scans (no compound/trigram index available yet)
 // can take up to ~100s on the current Turso database for common fields —
@@ -53,7 +54,13 @@ export default async function AdvancedSearchPage({
   // the header keyword search, which already prompts "Enter a search term
   // above" for the equivalent case.
   const wasSubmitted = FIELD_NAMES.some((name) => sp[name] !== undefined);
-  const { rows, total } = hasQuery
+
+  // Same per-IP throttle as /search. This path runs the identical (potentially
+  // multi-second) query under a 300s budget, so leaving it unthrottled let one
+  // source tie up long-running functions with cache-missing queries.
+  const throttled = hasQuery && !(await allowSearch());
+
+  const { rows, total } = hasQuery && !throttled
     ? await advancedSearch(fields, { sort, dir, page })
     : { rows: [], total: 0 };
 
@@ -73,7 +80,13 @@ export default async function AdvancedSearchPage({
         </p>
       )}
 
-      {hasQuery && (
+      {throttled && (
+        <p className="font-body text-ink-soft mt-8 text-center">
+          You&rsquo;re searching very quickly &mdash; please wait a moment and try again.
+        </p>
+      )}
+
+      {hasQuery && !throttled && (
         <div className="mt-8">
           <p className="font-body text-ink-soft mb-3">
             {total.toLocaleString()} result{total === 1 ? "" : "s"}

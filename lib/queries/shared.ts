@@ -29,9 +29,16 @@ export function isSortKey(value: string | undefined | null): value is SortKey {
   return !!value && Object.prototype.hasOwnProperty.call(SORT_COLUMNS, value);
 }
 
+// Deep pagination is served with LIMIT/OFFSET, and SQLite has to walk every
+// skipped row — so `?page=99999999` is a cheap request that forces an expensive
+// scan (and no real page is ever that deep: 135k rows / 100 per page ≈ 1,356).
+// Clamp it so a crafted page number can't be used as a cost amplifier.
+export const MAX_PAGE = 10_000;
+
 export function parsePage(value: string | undefined | null): number {
   const n = parseInt(value ?? "1", 10);
-  return Number.isFinite(n) && n > 0 ? n : 1;
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, MAX_PAGE);
 }
 
 export interface RecordListRow {
