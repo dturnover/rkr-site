@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.5.0",
+    "@vercel/speed-insights": "^2.0.0",
     "csv-parse": "^7.0.1",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",

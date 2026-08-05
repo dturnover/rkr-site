@@ -5,6 +5,8 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteSidebar from "@/components/SiteSidebar";
 import SiteFooter from "@/components/SiteFooter";
 import HomeMobileSearch from "@/components/HomeMobileSearch";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { SITE_URL } from "@/lib/siteUrl";
 
@@ -99,6 +101,12 @@ export default async function RootLayout({
           <main className="flex-1 min-w-0 w-full">{children}</main>
         </div>
         <SiteFooter />
+        {/* Vercel Web Analytics (visitors/page views) and Speed Insights (real
+            user performance). Both are cookieless and, in production on Vercel,
+            load their script and send beacons SAME-ORIGIN under /_vercel/*, so
+            the strict CSP in next.config.ts needs no production exception. */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
