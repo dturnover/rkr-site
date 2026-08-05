@@ -61,83 +61,93 @@ export default function BlobUploadForm() {
       return;
     }
 
-    // Step 2: import. The server streams NDJSON progress events back; read them
-    // as they arrive and show each one live, so wherever it stops is on screen.
+    // Step 2: import — possibly across several automatic passes. A big first
+    // import (or any change larger than one server invocation can apply) reports
+    // itself incomplete; we simply call again with resume=true until it's done.
+    // Each pass streams NDJSON progress events we render live.
     setStatus("importing");
-    try {
+    const MAX_PASSES = 60; // generous safety cap against an unexpected loop
+
+    type PassResult =
+      | { kind: "complete"; rowCount: number; lowRowCountWarning: boolean }
+      | { kind: "incomplete" } // clean "more to do" from the server
+      | { kind: "cutoff" } // stream ended mid-pass; committed progress persists
+      | { kind: "error"; message: string }
+      | { kind: "http-error"; message: string };
+
+    async function runPass(resume: boolean): Promise<PassResult> {
       const res = await fetch("/api/admin/import-from-blob", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl }),
+        body: JSON.stringify({ blobUrl, resume }),
       });
-
       if (!res.ok || !res.body) {
-        // A non-streamed error response (auth, bad URL, or a platform error
-        // page). Read whatever came back and show it verbatim.
         const raw = await res.text();
         const snippet = raw.replace(/\s+/g, " ").trim().slice(0, 200);
-        const message = `The server returned HTTP ${res.status}${snippet ? `: “${snippet}”` : " with no body"}.`;
-        addLine(message, "error");
-        setError(message);
-        setStatus("error");
-        return;
+        return {
+          kind: "http-error",
+          message: `The server returned HTTP ${res.status}${snippet ? `: “${snippet}”` : " with no body"}.`,
+        };
       }
-
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
-      let settled = false; // saw a terminal "done" or "error" event
-
-      // NDJSON: split on newlines, parse each complete line as it arrives.
-      readLoop: while (true) {
+      let buf = "";
+      let terminal: PassResult | null = null;
+      while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? ""; // keep the trailing partial line
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          let evt: { type?: string; message?: string; rowCount?: number; lowRowCountWarning?: boolean };
-          try {
-            evt = JSON.parse(trimmed);
-          } catch {
-            continue; // ignore anything that isn't a JSON event line
-          }
-
-          if (evt.type === "log" && evt.message) {
-            addLine(evt.message);
-          } else if (evt.type === "done") {
-            settled = true;
-            addLine("Import finished successfully. Refreshing…");
-            const params = new URLSearchParams({
-              imported: String(evt.rowCount ?? 0),
-              warning: evt.lowRowCountWarning ? "1" : "0",
-            });
-            router.push(`/admin?${params.toString()}`);
-            router.refresh();
-            return;
-          } else if (evt.type === "error") {
-            settled = true;
-            const message = evt.message ?? "The import failed.";
-            addLine(message, "error");
-            setError(message);
-            setStatus("error");
-            break readLoop;
-          }
+          const t = line.trim();
+          if (!t) continue;
+          let evt: {
+            type?: string; message?: string; complete?: boolean;
+            rowCount?: number; lowRowCountWarning?: boolean;
+          };
+          try { evt = JSON.parse(t); } catch { continue; }
+          if (evt.type === "log" && evt.message) addLine(evt.message);
+          else if (evt.type === "done")
+            terminal = evt.complete === false
+              ? { kind: "incomplete" }
+              : { kind: "complete", rowCount: evt.rowCount ?? 0, lowRowCountWarning: !!evt.lowRowCountWarning };
+          else if (evt.type === "error") terminal = { kind: "error", message: evt.message ?? "The import failed." };
         }
       }
+      return terminal ?? { kind: "cutoff" };
+    }
 
-      // The stream ended without a done/error event — the function was cut off
-      // by the platform (its time or memory limit). The last progress line above
-      // shows exactly where. This is the diagnostic case worth screenshotting.
-      if (!settled) {
-        const message =
-          "The server stopped responding after the last step shown above — it was cut off by its time or memory limit before finishing. The import may still be completing in the background: wait ~2 minutes, reload this page, and check the track count under “Current Catalogue.” Please screenshot this log.";
-        addLine(message, "error");
-        setError(message);
-        setStatus("error");
+    try {
+      for (let pass = 1; pass <= MAX_PASSES; pass++) {
+        if (pass > 1) addLine(`Continuing (pass ${pass})…`);
+        const result = await runPass(pass > 1);
+
+        if (result.kind === "complete") {
+          addLine("Import finished successfully. Refreshing…");
+          const params = new URLSearchParams({
+            imported: String(result.rowCount),
+            warning: result.lowRowCountWarning ? "1" : "0",
+          });
+          router.push(`/admin?${params.toString()}`);
+          router.refresh();
+          return;
+        }
+        if (result.kind === "error" || result.kind === "http-error") {
+          addLine(result.message, "error");
+          setError(result.message);
+          setStatus("error");
+          return;
+        }
+        // incomplete or cutoff → committed progress persists; loop to resume.
+        if (result.kind === "cutoff") {
+          addLine("Connection dropped mid-import — resuming from where it left off…");
+        }
       }
+      const capMsg = "Stopped after many passes without finishing. Some progress was saved; reload and check the track count, then upload again to continue.";
+      addLine(capMsg, "error");
+      setError(capMsg);
+      setStatus("error");
     } catch (err) {
       const message = `Import step failed: ${err instanceof Error ? err.message : String(err)}`;
       addLine(message, "error");

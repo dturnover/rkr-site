@@ -34,12 +34,24 @@ import {
 // fields (contentHashOf), which both sides compute identically — no dependence
 // on row ids, which the old full rebuild reassigned every time.
 //
-// The whole diff is applied in ONE transaction, so the live catalogue either
-// updates completely or not at all — a failure never leaves it half-changed.
+// RESUMABLE: changes are applied in committed batches with a per-pass time
+// budget. If a single upload has more differences than fit in one function
+// invocation (notably the FIRST import after this system ships, when the live
+// baseline is stale and lots differs), the pass stops and reports complete=false;
+// the caller simply calls again and, because each pass re-fingerprints the now
+// partially-updated catalogue, the remaining difference shrinks every time until
+// it converges. Steady-state monthly updates are tiny and finish in one pass.
+// Each batch indexes its own rows in both FTS tables, so an interrupted pass
+// never leaves committed rows unsearchable.
 
-const DELETE_CHUNK = 400; // ids per DELETE ... WHERE id IN (...) statement
-const INSERT_CHUNK = 400; // rows per multi-row INSERT statement
-const READ_PAGE = 5000; // rows per page when fingerprinting the live catalogue
+// Turso write cost is dominated by per-round-trip latency, not row count, so
+// pack each round trip as full as SQLite's bind-variable limit (32766) safely
+// allows: 800 rows × ~34 columns ≈ 27k binds, comfortably under the cap, and
+// far fewer round trips than small chunks. Reads are cheaper, so page them big
+// too, to cut the number of fingerprint round trips.
+const DELETE_CHUNK = 800; // ids per DELETE ... WHERE id IN (...) statement
+const INSERT_CHUNK = 800; // rows per multi-row INSERT statement
+const READ_PAGE = 20000; // rows per page when fingerprinting the live catalogue
 
 export interface DiffResult {
   inserted: number;
@@ -48,7 +60,16 @@ export interface DiffResult {
   previousRowCount: number;
   rowCount: number;
   lowRowCountWarning: boolean;
+  // False when this pass ran out of time before applying every change — the
+  // caller should call importDiff again to continue (see the resumable design
+  // note above). A normal small update always completes in one pass.
+  complete: boolean;
 }
+
+// How long a single pass will spend before stopping to let the caller resume.
+// Comfortably under the 300s function limit so the pass returns (releasing the
+// import lock) instead of being killed mid-write.
+const APPLY_BUDGET_MS = 210_000;
 
 /** True when the live `records` table exists and holds at least one row — the
  * precondition for a diff. A fresh/empty database has nothing to diff against,
@@ -63,26 +84,40 @@ export async function canDiff(): Promise<boolean> {
   }
 }
 
-export async function importDiff(csvBuffer: Buffer, onProgress?: ProgressFn): Promise<DiffResult> {
+export async function importDiff(
+  csvBuffer: Buffer,
+  onProgress?: ProgressFn,
+  opts: { budgetMs?: number; resume?: boolean } = {}
+): Promise<DiffResult> {
   // Serialize against any other import/restore (same lock the full rebuild
-  // uses) so two uploads can't interleave their writes on the live table.
+  // uses). Each resumable pass takes the lock and releases it in finally, so
+  // consecutive passes (the client waits for each) never overlap.
   await acquireLock();
   try {
-    return await runDiff(csvBuffer, onProgress);
+    return await runDiff(csvBuffer, onProgress, opts.budgetMs ?? APPLY_BUDGET_MS, opts.resume ?? false);
   } finally {
     await releaseLock();
   }
 }
 
-async function runDiff(csvBuffer: Buffer, onProgress?: ProgressFn): Promise<DiffResult> {
+async function runDiff(
+  csvBuffer: Buffer,
+  onProgress: ProgressFn | undefined,
+  budgetMs: number,
+  isResume: boolean
+): Promise<DiffResult> {
   const client = await getClient();
   const t0 = Date.now();
   const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
+  // Guarantee forward progress: never defer until at least one batch has been
+  // committed this pass, so even a pass whose read phase ate the whole budget
+  // still applies something (otherwise a resume loop could spin forever).
+  let appliedBatches = 0;
+  const overBudget = () => appliedBatches > 0 && Date.now() - t0 >= budgetMs;
 
   // 1) Fingerprint the current live catalogue: content hash → queue of row ids
   //    holding that content (a multiset, so duplicate rows are handled). Read in
-  //    pages by id so we never pull the whole table into memory at once; only
-  //    the compact hash+id map is kept.
+  //    pages by id so only the compact hash+id map is kept in memory.
   onProgress?.("Comparing your file to the current catalogue…");
   const selectCols = CSV_FIELDS.join(", ");
   const dbHashes = new Map<string, number[]>();
@@ -109,169 +144,183 @@ async function runDiff(csvBuffer: Buffer, onProgress?: ProgressFn): Promise<Diff
     onProgress?.(`Read ${previousRowCount.toLocaleString()} existing records (${secs()}s)…`);
   }
 
-  // 2) Stream the upload's target rows (file + editor overlay). Match each
-  //    against the live fingerprints: a hit means "unchanged" (consume one id so
-  //    it isn't later treated as removed); a miss means it's new/changed and
-  //    must be inserted. New rows get ids continuing after the current max, so
-  //    they're contiguous — which lets the FTS backfill select them by range.
-  const tx = await client.transaction("write");
-  try {
-    const newIdStart = maxId + 1;
-    let newId = maxId;
-    let inserted = 0;
-    let unchanged = 0;
-    let nextReport = 5000;
+  // 2) Stream the upload's target rows (file + editor overlay). A hash hit means
+  //    "unchanged" (consume one id so it isn't later treated as removed); a miss
+  //    means new/changed → insert. New rows get ids continuing after the current
+  //    max. Inserts are applied in committed batches (NOT one big transaction)
+  //    so progress survives across resumable passes; each batch also indexes its
+  //    own rows in both FTS tables, so a batch is never left un-searchable.
+  const catalogExprs = CATALOG_FTS_COLUMNS.map((c) => CATALOG_FTS_SOURCE_EXPR[c]);
+  const insertColsSql = `INSERT INTO ${LIVE_TABLE} (id, ${RECORD_INSERT_COLUMNS.join(", ")}) VALUES `;
+  const rowPlaceholder = `(?, ${RECORD_INSERT_COLUMNS.map(() => "?").join(", ")})`;
 
-    // Collect the inserted rows (up to the history cap) so this import can be
-    // stored in the reconstructable history. Past the cap we stop collecting
-    // and the entry is recorded as truncated — bounding memory and storage.
-    const insertedRows: FieldRow[] = [];
-    let historyOverflow = false;
+  let newId = maxId;
+  let inserted = 0;
+  let unchanged = 0;
+  let deferredInserts = false;
+  let nextReport = 5000;
 
-    const insertColsSql = `INSERT INTO ${LIVE_TABLE} (id, ${RECORD_INSERT_COLUMNS.join(", ")}) VALUES `;
-    const rowPlaceholder = `(?, ${RECORD_INSERT_COLUMNS.map(() => "?").join(", ")})`;
-    let insArgs: (string | number | null)[] = [];
-    let insCount = 0;
-    const flushInserts = async () => {
-      if (insCount === 0) return;
-      await tx.execute({
-        sql: insertColsSql + Array(insCount).fill(rowPlaceholder).join(", "),
-        args: insArgs,
-      });
-      insArgs = [];
-      insCount = 0;
-      await new Promise((resolve) => setImmediate(resolve));
-    };
+  // Collect the changed rows for the reconstructable history — but only on a
+  // single-pass import (not a resume), and only up to the storage cap. A
+  // multi-pass "catch-up" import records no history entry (its net change spans
+  // passes and isn't a meaningful restore point).
+  const captureHistory = !isResume;
+  const insertedRows: FieldRow[] = [];
+  let historyOverflow = false;
 
-    for await (const row of streamTargetRows(csvBuffer, onProgress)) {
-      const hash = contentHashOf(row);
-      const bucket = dbHashes.get(hash);
-      if (bucket && bucket.length > 0) {
-        bucket.pop(); // matched an existing row → unchanged, keep it
-        unchanged++;
-        continue;
-      }
-      newId++;
-      insArgs.push(newId, ...recordInsertValues(row));
-      insCount++;
-      inserted++;
+  let insArgs: (string | number | null)[] = [];
+  let insCount = 0;
+  let batchFirstId = 0;
+  const flushInserts = async () => {
+    if (insCount === 0) return;
+    const lastId = newId;
+    await client.batch(
+      [
+        { sql: insertColsSql + Array(insCount).fill(rowPlaceholder).join(", "), args: insArgs },
+        {
+          sql: `INSERT INTO ${LIVE_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")})
+                SELECT id, ${FTS_COLUMNS.join(", ")} FROM ${LIVE_TABLE} WHERE id BETWEEN ? AND ?`,
+          args: [batchFirstId, lastId],
+        },
+        {
+          sql: `INSERT INTO ${LIVE_CATALOG_FTS_TABLE} (rowid, ${CATALOG_FTS_COLUMNS.join(", ")})
+                SELECT id, ${catalogExprs.join(", ")} FROM ${LIVE_TABLE} WHERE id BETWEEN ? AND ?`,
+          args: [batchFirstId, lastId],
+        },
+      ],
+      "write"
+    );
+    insArgs = [];
+    insCount = 0;
+    appliedBatches++;
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  for await (const row of streamTargetRows(csvBuffer, onProgress)) {
+    const hash = contentHashOf(row);
+    const bucket = dbHashes.get(hash);
+    if (bucket && bucket.length > 0) {
+      bucket.pop(); // matched an existing row → unchanged, keep it
+      unchanged++;
+      continue;
+    }
+    // New/changed row. Apply it only while within the time budget; otherwise
+    // leave it for the next pass (it stays "new" until inserted).
+    if (overBudget()) {
+      deferredInserts = true;
+      continue;
+    }
+    newId++;
+    if (insCount === 0) batchFirstId = newId;
+    insArgs.push(newId, ...recordInsertValues(row));
+    insCount++;
+    inserted++;
+    if (captureHistory) {
       if (insertedRows.length < HISTORY_ROW_CAP) insertedRows.push(row);
       else historyOverflow = true;
-      if (insCount >= INSERT_CHUNK) await flushInserts();
-      if (inserted + unchanged >= nextReport) {
-        onProgress?.(`Checked ${(inserted + unchanged).toLocaleString()} records; ${inserted.toLocaleString()} new so far (${secs()}s)…`);
-        nextReport += 5000;
-      }
     }
-    await flushInserts();
+    if (insCount >= INSERT_CHUNK) await flushInserts();
+    if (inserted + unchanged >= nextReport) {
+      onProgress?.(
+        `Checked ${(inserted + unchanged).toLocaleString()} records; ${inserted.toLocaleString()} new so far (${secs()}s)…`
+      );
+      nextReport += 5000;
+    }
+  }
+  await flushInserts();
 
-    // 3) Whatever ids are left in the fingerprint map were in the live catalogue
-    //    but not in the upload → deletes.
-    const deleteIds: number[] = [];
-    for (const bucket of dbHashes.values()) for (const id of bucket) deleteIds.push(id);
+  // 3) Whatever ids are left in the fingerprint map were in the live catalogue
+  //    but not in the upload → deletes. Apply them (with FTS) in committed id
+  //    chunks, also honouring the time budget.
+  const deleteIds: number[] = [];
+  for (const bucket of dbHashes.values()) for (const id of bucket) deleteIds.push(id);
 
-    onProgress?.(
-      `${inserted.toLocaleString()} new/changed, ${deleteIds.length.toLocaleString()} removed, ${unchanged.toLocaleString()} unchanged (${secs()}s). Applying…`
-    );
+  let deleted = 0;
+  let deferredDeletes = false;
+  const deletedRows: FieldRow[] = [];
+  onProgress?.(
+    `${inserted.toLocaleString()} new/changed applied, ${deleteIds.length.toLocaleString()} to remove (${secs()}s)…`
+  );
+  for (let i = 0; i < deleteIds.length; i += DELETE_CHUNK) {
+    if (overBudget()) {
+      deferredDeletes = true;
+      break;
+    }
+    const chunk = deleteIds.slice(i, i + DELETE_CHUNK);
+    const inList = chunk.map(() => "?").join(", ");
 
-    // Capture the full content of the rows we're about to delete (for the
-    // reconstructable history) BEFORE they're gone — but only while we're still
-    // within the storage cap. Read through the transaction so it sees the
-    // pre-delete state.
-    const deletedRows: FieldRow[] = [];
-    const willStoreHistory =
-      !historyOverflow && inserted + deleteIds.length <= HISTORY_ROW_CAP;
-    if (willStoreHistory && deleteIds.length > 0) {
-      const cols = CSV_FIELDS.join(", ");
-      for (let i = 0; i < deleteIds.length; i += READ_PAGE) {
-        const chunk = deleteIds.slice(i, i + READ_PAGE);
-        const inList = chunk.map(() => "?").join(", ");
-        const res = await tx.execute({
-          sql: `SELECT ${cols} FROM ${LIVE_TABLE} WHERE id IN (${inList})`,
+    // For history, read the rows' content before removing them (bounded by cap).
+    if (captureHistory && !historyOverflow) {
+      if (inserted + deletedRows.length + chunk.length > HISTORY_ROW_CAP) {
+        historyOverflow = true;
+      } else {
+        const res = await client.execute({
+          sql: `SELECT ${selectCols} FROM ${LIVE_TABLE} WHERE id IN (${inList})`,
           args: chunk,
         });
         for (const raw of res.rows) {
-          const r = raw as unknown as Record<string, string | null>;
+          const rr = raw as unknown as Record<string, string | null>;
           const row: FieldRow = {};
-          for (const f of CSV_FIELDS) row[f] = r[f] ?? null;
+          for (const f of CSV_FIELDS) row[f] = rr[f] ?? null;
           deletedRows.push(row);
         }
       }
     }
 
-    // Apply deletes to the base table and both FTS indexes, in id chunks.
-    for (let i = 0; i < deleteIds.length; i += DELETE_CHUNK) {
-      const chunk = deleteIds.slice(i, i + DELETE_CHUNK);
-      const inList = chunk.map(() => "?").join(", ");
-      await tx.batch([
+    await client.batch(
+      [
         { sql: `DELETE FROM ${LIVE_TABLE} WHERE id IN (${inList})`, args: chunk },
         { sql: `DELETE FROM ${LIVE_FTS_TABLE} WHERE rowid IN (${inList})`, args: chunk },
         { sql: `DELETE FROM ${LIVE_CATALOG_FTS_TABLE} WHERE rowid IN (${inList})`, args: chunk },
-      ]);
-      await new Promise((resolve) => setImmediate(resolve));
-    }
+      ],
+      "write"
+    );
+    deleted += chunk.length;
+    appliedBatches++;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 
-    // Backfill the FTS indexes for the newly-inserted rows (contiguous id
-    // range) with a server-side INSERT...SELECT — the same expressions the full
-    // rebuild uses, so the indexes are byte-identical either way.
-    if (inserted > 0) {
-      await tx.execute({
-        sql: `INSERT INTO ${LIVE_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")})
-              SELECT id, ${FTS_COLUMNS.join(", ")} FROM ${LIVE_TABLE} WHERE id >= ?`,
-        args: [newIdStart],
-      });
-      const catalogExprs = CATALOG_FTS_COLUMNS.map((c) => CATALOG_FTS_SOURCE_EXPR[c]);
-      await tx.execute({
-        sql: `INSERT INTO ${LIVE_CATALOG_FTS_TABLE} (rowid, ${CATALOG_FTS_COLUMNS.join(", ")})
-              SELECT id, ${catalogExprs.join(", ")} FROM ${LIVE_TABLE} WHERE id >= ?`,
-        args: [newIdStart],
-      });
-    }
+  await stampUpdatedNow();
 
-    await tx.commit();
-    await stampUpdatedNow();
+  const complete = !deferredInserts && !deferredDeletes;
+  const rowCount = Number(
+    (await client.execute(`SELECT COUNT(*) AS c FROM ${LIVE_TABLE}`)).rows[0]?.c ?? 0
+  );
 
-    // The atomic-swap "previous version" snapshot is only meaningful right after
-    // a full rebuild; once we start editing the live table in place it no longer
-    // reflects the pre-import state, so drop it rather than leave the "Restore
-    // Previous" button silently reverting to a stale baseline. (A proper
-    // per-diff undo can replace this later.) Safety here rests on the diff being
-    // atomic, the low-row-count warning below, and re-uploading a good file.
+  if (complete) {
+    // The atomic-swap "previous version" no longer reflects reality once we edit
+    // the live table in place, so drop it (hides the misleading Restore button).
     await client.execute(`DROP TABLE IF EXISTS ${PREVIOUS_FTS_TABLE}`);
     await client.execute(`DROP TABLE IF EXISTS ${PREVIOUS_CATALOG_FTS_TABLE}`);
     await client.execute(`DROP TABLE IF EXISTS ${PREVIOUS_TABLE}`);
 
-    const rowCount = previousRowCount + inserted - deleteIds.length;
-
-    // Record this import in the rolling history (best-effort; never fails the
-    // import). Only store the row payload when the change fit under the cap, so
-    // history stays small and reconstructable.
-    if (inserted > 0 || deleteIds.length > 0) {
+    // Record this single-pass import in the rolling history (best-effort).
+    if (captureHistory && (inserted > 0 || deleted > 0)) {
       await recordImport({
         insertedCount: inserted,
-        deletedCount: deleteIds.length,
+        deletedCount: deleted,
         previousRowCount,
         rowCount,
-        rows: willStoreHistory ? { inserted: insertedRows, deleted: deletedRows } : undefined,
+        rows: historyOverflow ? undefined : { inserted: insertedRows, deleted: deletedRows },
       });
     }
-
     onProgress?.(`Done — the catalogue now has ${rowCount.toLocaleString()} records (${secs()}s).`);
-    return {
-      inserted,
-      deleted: deleteIds.length,
-      unchanged,
-      previousRowCount,
-      rowCount,
-      // Warn if the upload would wipe out more than half the catalogue — the
-      // same guard the full rebuild has, in case a truncated/wrong file is
-      // uploaded by mistake.
-      lowRowCountWarning: previousRowCount > 0 && rowCount < previousRowCount * 0.5,
-    };
-  } catch (err) {
-    await tx.rollback();
-    throw err;
+  } else {
+    onProgress?.(
+      `Time budget reached after ${secs()}s — ${inserted.toLocaleString()} added, ${deleted.toLocaleString()} removed so far. Continuing automatically…`
+    );
   }
+
+  return {
+    inserted,
+    deleted,
+    unchanged,
+    previousRowCount,
+    rowCount,
+    // Only meaningful once the whole diff has been applied.
+    lowRowCountWarning: complete && previousRowCount > 0 && rowCount < previousRowCount * 0.5,
+    complete,
+  };
 }
 
 // Keep FieldRow importable via this module's type surface for callers.

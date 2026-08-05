@@ -36,7 +36,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { blobUrl } = (await request.json()) as { blobUrl?: string };
+  const body = (await request.json()) as { blobUrl?: string; resume?: boolean };
+  const { blobUrl } = body;
+  const isResume = body.resume === true;
   // Restrict to Vercel's own Blob storage domains before letting the server
   // fetch() this URL. Without this, an authenticated request (or a stolen
   // admin session cookie) could make the server fetch an arbitrary internal
@@ -92,18 +94,26 @@ export async function POST(request: NextRequest) {
         // load on an empty database has nothing to diff against, so fall back
         // to a full build for that one case.
         const useDiff = await canDiff();
-        const result = useDiff ? await importDiff(buffer, log) : await importAndSwap(buffer, log);
+        const result = useDiff
+          ? await importDiff(buffer, log, { resume: isResume })
+          : { ...(await importAndSwap(buffer, log)), complete: true as const };
 
         // Flush all catalogue caches (records, search, browse, status) so the
         // new data is served immediately rather than after each cache's TTL.
         revalidateTag(CATALOGUE_TAG, { expire: 0 });
-        await del(safeUrl).catch(() => {
-          // Not fatal — the file just lingers in Blob storage. Import succeeded.
-        });
+
+        // A full diff can span several passes; only delete the uploaded blob
+        // once the import is fully complete (later passes re-fetch it).
+        if (result.complete) {
+          await del(safeUrl).catch(() => {
+            // Not fatal — the file just lingers in Blob storage.
+          });
+        }
 
         log(`Finished in ${ms()}.`);
         send({
           type: "done",
+          complete: result.complete,
           rowCount: result.rowCount,
           previousRowCount: result.previousRowCount,
           lowRowCountWarning: result.lowRowCountWarning,
