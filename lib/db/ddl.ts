@@ -73,11 +73,19 @@ export const CATALOG_FTS_COLUMNS = [
   "b_side_label_number",
 ] as const;
 
-export function buildDdl(tableName: string): string {
+// The base table plus the two (empty) FTS virtual tables — but NOT the
+// secondary B-tree indexes. Those are created separately, AFTER the rows are
+// bulk-loaded (see buildIndexStatements): maintaining 11 indexes on every one
+// of 135k inserts is random-I/O that degrades badly as the table grows over a
+// network connection to Turso (measured: the 2nd 10k rows took ~3.6x longer
+// than the 1st, and the whole import blew past the 300s function budget).
+// Building each index once at the end, in a single pass over the finished
+// table, is dramatically faster and doesn't degrade. The empty FTS tables are
+// fine to create up front — they're populated by a separate INSERT...SELECT
+// after the load, and carry no B-tree cost during the row inserts.
+export function buildTableDdl(tableName: string): string {
   const fts = `${tableName}_fts`;
   const catalogFts = `${tableName}_catalog_fts`;
-  const uid = crypto.randomBytes(4).toString("hex");
-  const idx = (name: string) => `idx_${tableName}_${name}_${uid}`;
   return `
 CREATE TABLE ${tableName} (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,18 +124,6 @@ CREATE TABLE ${tableName} (
   format_norm   TEXT
 );
 
-CREATE INDEX ${idx("artist_norm")}   ON ${tableName}(artist_norm);
-CREATE INDEX ${idx("label_norm")}    ON ${tableName}(label_norm);
-CREATE INDEX ${idx("producer_norm")} ON ${tableName}(producer_norm);
-CREATE INDEX ${idx("riddim_norm")}   ON ${tableName}(riddim_norm);
-CREATE INDEX ${idx("country_norm")}  ON ${tableName}(country_norm);
-CREATE INDEX ${idx("origin_norm")}   ON ${tableName}(origin_norm);
-CREATE INDEX ${idx("genre_norm")}    ON ${tableName}(genre_norm);
-CREATE INDEX ${idx("format_norm")}   ON ${tableName}(format_norm);
-CREATE INDEX ${idx("year_sort")}     ON ${tableName}(year_sort);
-CREATE INDEX ${idx("matrix_number")} ON ${tableName}(matrix_number);
-CREATE INDEX ${idx("label_number")}  ON ${tableName}(label_number);
-
 CREATE VIRTUAL TABLE ${fts} USING fts5(title, title_credit, artist, artist_credit, notes);
 
 -- Advanced Search's per-field lookups used to be a plain 'LIKE %value%' on
@@ -144,6 +140,36 @@ CREATE VIRTUAL TABLE ${fts} USING fts5(title, title_credit, artist, artist_credi
 -- depending on the tokenizer's own case-folding defaults.
 CREATE VIRTUAL TABLE ${catalogFts} USING fts5(${CATALOG_FTS_COLUMNS.join(", ")}, tokenize='trigram');
 `;
+}
+
+// The secondary indexes, as separate statements to run AFTER the bulk load.
+// Index names get a random per-build suffix rather than being derived from
+// `tableName` alone: `ALTER TABLE ... RENAME TO` (used by the swap) renames a
+// table but does NOT rename its indexes, so after a few swap cycles the live
+// `records` table ends up carrying indexes still literally named
+// `idx_records_new_*` from whichever import first created them. Since the
+// importer always builds into a table literally called `records_new` again
+// next time, index names tied only to that fixed name would collide with the
+// previous generation's now-differently-placed indexes (confirmed by hitting
+// exactly this "index already exists" error on a second import during testing)
+// — SQLite indexes share one global namespace, unlike tables.
+export function buildIndexStatements(tableName: string): string[] {
+  const uid = crypto.randomBytes(4).toString("hex");
+  const idx = (name: string) => `idx_${tableName}_${name}_${uid}`;
+  const cols = [
+    "artist_norm",
+    "label_norm",
+    "producer_norm",
+    "riddim_norm",
+    "country_norm",
+    "origin_norm",
+    "genre_norm",
+    "format_norm",
+    "year_sort",
+    "matrix_number",
+    "label_number",
+  ];
+  return cols.map((c) => `CREATE INDEX ${idx(c)} ON ${tableName}(${c})`);
 }
 
 export const LIVE_TABLE = "records";

@@ -3,7 +3,8 @@ import iconv from "iconv-lite";
 import { parse } from "csv-parse";
 import { getClient } from "@/lib/db/client";
 import {
-  buildDdl,
+  buildTableDdl,
+  buildIndexStatements,
   CATALOG_FTS_COLUMNS,
   STAGING_TABLE,
   STAGING_FTS_TABLE,
@@ -83,8 +84,8 @@ export const CATALOG_FTS_SOURCE_EXPR: Record<(typeof CATALOG_FTS_COLUMNS)[number
 
 // _norm columns, computed here in JS and inserted as plain values rather
 // than left as SQL GENERATED/STORED expressions — see the comment on
-// buildDdl in lib/db/ddl.ts for why (Turso's per-row expression evaluation
-// cost was the dominant bottleneck in a full import, confirmed by testing).
+// buildTableDdl in lib/db/ddl.ts for why (Turso's per-row expression
+// evaluation cost was the dominant bottleneck in a full import, per testing).
 const NORM_COLUMNS = [
   "artist_norm",
   "label_norm",
@@ -310,7 +311,7 @@ export async function buildStagingTables(
     DROP TABLE IF EXISTS ${STAGING_FTS_TABLE};
     DROP TABLE IF EXISTS ${STAGING_CATALOG_FTS_TABLE};
     DROP TABLE IF EXISTS ${STAGING_TABLE};
-    ${buildDdl(STAGING_TABLE)}
+    ${buildTableDdl(STAGING_TABLE)}
   `);
 
   const allColumns = [...INSERT_COLUMNS, "year_sort", ...NORM_COLUMNS];
@@ -397,7 +398,16 @@ export async function buildStagingTables(
 
   sealChunk();
   await flushBatch();
-  onProgress?.(`All ${id.toLocaleString()} records saved (${secs()}s). Building the search index…`);
+
+  // Now that all rows are in, build the secondary indexes in one pass each —
+  // far faster than maintaining them on every insert, and it doesn't degrade
+  // as the table grows (see buildIndexStatements). Each runs server-side on
+  // Turso, so this is just a handful of round trips.
+  onProgress?.(`All ${id.toLocaleString()} records saved (${secs()}s). Building sort indexes…`);
+  for (const stmt of buildIndexStatements(STAGING_TABLE)) {
+    await client.execute(stmt);
+  }
+  onProgress?.(`Sort indexes built (${secs()}s). Building the search index…`);
 
   // Populate both FTS indexes from the table we just filled, entirely
   // server-side — no need to transmit the text over the network a second time.
