@@ -106,6 +106,12 @@ const NORM_SOURCE_FIELDS = [
   "format",
 ] as const;
 
+// A human-readable progress reporter. The import calls it at each phase so the
+// caller can stream live status to the browser (see the import-from-blob route)
+// and/or write it to the server logs. Optional everywhere — a plain import that
+// passes nothing behaves exactly as before.
+export type ProgressFn = (message: string) => void;
+
 function nullIfBlank(value: string | undefined | null): string | null {
   if (value == null) return null;
   const trimmed = value.trim();
@@ -277,7 +283,10 @@ const CHUNKS_PER_BATCH = 10;
  * function and return a non-JSON platform error to the browser; streaming
  * keeps it near ~200-300MB). The editor overlay is loaded up front (it's
  * editor-generated, so small) and applied to each row as it streams past. */
-export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount: number }> {
+export async function buildStagingTables(
+  csvBuffer: Buffer,
+  onProgress?: ProgressFn
+): Promise<{ rowCount: number }> {
   const client = await getClient();
 
   // The editor overlay, indexed by record key. Field edits fill only blanks
@@ -349,11 +358,13 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     }
   };
 
-  // Phase timings surface in the Vercel function logs so a stuck import can be
-  // pinned to parse+insert vs. FTS. `next` marks the row at which to log again.
+  // Progress is reported at each phase so a stuck import can be pinned to
+  // parse+insert vs. FTS — both on screen (streamed to the browser) and in the
+  // server logs. `nextReport` marks the row count at which to report again.
   const bt0 = Date.now();
-  const btms = () => `${((Date.now() - bt0) / 1000).toFixed(1)}s`;
-  let next = 20000;
+  const secs = () => ((Date.now() - bt0) / 1000).toFixed(1);
+  let nextReport = 10000;
+  onProgress?.("Reading the file and saving records…");
 
   for await (const row of parseUploadRows(csvBuffer)) {
     const key = computeRecordKey(row);
@@ -366,23 +377,27 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     // Dad's file contains this record → his version wins; drop the editor copy.
     if (editorRecordsByKey.size > 0) editorRecordsByKey.delete(key);
     await addRow(row);
-    if (id >= next) {
-      console.log(`[import] inserted ${id} rows at ${btms()}`);
-      next += 20000;
+    if (id >= nextReport) {
+      onProgress?.(`Saved ${id.toLocaleString()} records (${secs()}s)…`);
+      nextReport += 10000;
     }
   }
 
   // Append editor-added records not present in dad's file.
+  const beforeEditorAppend = id;
   for (const data of editorRecordsByKey.values()) {
     const row: FieldRow = {};
     for (const f of CSV_FIELDS) row[f] = null;
     for (const f of EDITABLE_FIELDS) row[f] = nullIfBlank(data[f] ?? null);
     await addRow(row);
   }
+  if (id > beforeEditorAppend) {
+    onProgress?.(`Re-applied ${(id - beforeEditorAppend).toLocaleString()} editor-added record(s).`);
+  }
 
   sealChunk();
   await flushBatch();
-  console.log(`[import] all ${id} rows inserted at ${btms()}; building search indexes`);
+  onProgress?.(`All ${id.toLocaleString()} records saved (${secs()}s). Building the search index…`);
 
   // Populate both FTS indexes from the table we just filled, entirely
   // server-side — no need to transmit the text over the network a second time.
@@ -390,12 +405,13 @@ export async function buildStagingTables(csvBuffer: Buffer): Promise<{ rowCount:
     `INSERT INTO ${STAGING_FTS_TABLE} (rowid, ${FTS_COLUMNS.join(", ")})
      SELECT id, ${FTS_COLUMNS.join(", ")} FROM ${STAGING_TABLE}`
   );
+  onProgress?.(`Search index 1 of 2 built (${secs()}s)…`);
   const catalogFtsSourceExprs = CATALOG_FTS_COLUMNS.map((c) => CATALOG_FTS_SOURCE_EXPR[c]);
   await client.execute(
     `INSERT INTO ${STAGING_CATALOG_FTS_TABLE} (rowid, ${CATALOG_FTS_COLUMNS.join(", ")})
      SELECT id, ${catalogFtsSourceExprs.join(", ")} FROM ${STAGING_TABLE}`
   );
-  console.log(`[import] search indexes built at ${btms()}`);
+  onProgress?.(`Search index built (${secs()}s).`);
 
   return { rowCount: id };
 }

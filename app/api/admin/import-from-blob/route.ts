@@ -5,10 +5,11 @@ import { isAdminAuthenticated } from "@/lib/auth/requireAdmin";
 import { importAndSwap } from "@/lib/import/atomicSwap";
 import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
-// A full CSV rebuild (132k+ rows, generated columns, FTS indexing) is a
-// genuinely heavy one-off operation — give it the most headroom Vercel
-// allows rather than the ~10s default. Requires Fluid Compute to actually
-// grant up to 300s on the Hobby plan; without it this is capped at 60s.
+// A full catalogue rebuild (135k+ rows, generated columns, FTS indexing) is a
+// genuinely heavy one-off operation — give it the most headroom Vercel allows
+// rather than the ~10s default. Requires Fluid Compute to actually grant up to
+// 300s on the Hobby plan; without it this is capped at 60s. (vercel.json sets
+// `fluid: true`.)
 export const maxDuration = 300;
 
 // Second half of the production upload flow (see BlobUploadForm.tsx /
@@ -18,6 +19,17 @@ export const maxDuration = 300;
 // route's own request body is just a small JSON URL string). We fetch the
 // file back server-to-server (no size limit on outbound fetches), import
 // it, then delete the blob so storage doesn't accumulate across updates.
+//
+// The response is STREAMED as newline-delimited JSON (NDJSON): one event per
+// phase, sent as it happens, so the admin watches live progress in the browser
+// instead of staring at a spinner and — critically — so that if the function
+// is killed (timeout/OOM), the last event they saw pinpoints where it stopped.
+// Event shapes:
+//   {"type":"log","message":"…"}                          progress line
+//   {"type":"done","rowCount":N,"lowRowCountWarning":b}    success
+//   {"type":"error","message":"…"}                         handled failure
+// A stream that just ENDS with no done/error means the platform cut the
+// function off — the client reports that explicitly.
 export async function POST(request: NextRequest) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -44,43 +56,68 @@ export async function POST(request: NextRequest) {
   }
   const safeUrl = parsed.href;
 
-  // Phase timings go to the Vercel function logs (Deployments → the deployment
-  // → Functions/Logs). If an import ever dies on a real catalogue, these show
-  // exactly how far it got — fetch, parse+insert, or FTS — and the real error,
-  // which the browser can't always see when the platform kills the function.
   const t0 = Date.now();
   const ms = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
-  try {
-    console.log(`[import] start; fetching blob`);
-    const res = await fetch(safeUrl);
-    if (!res.ok) {
-      console.error(`[import] blob fetch failed status=${res.status} at ${ms()}`);
-      return NextResponse.json({ error: `Could not fetch uploaded file (${res.status})` }, { status: 502 });
-    }
-    const buffer = Buffer.from(await res.arrayBuffer());
-    console.log(`[import] fetched ${(buffer.length / 1e6).toFixed(1)}MB at ${ms()}; importing`);
+  const encoder = new TextEncoder();
 
-    const result = await importAndSwap(buffer);
-    console.log(`[import] importAndSwap done rows=${result.rowCount} at ${ms()}`);
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      // Emit one NDJSON event. Every progress line also goes to the server logs
+      // (Vercel: the deployment → Logs) so there's a second record if the
+      // browser tab is closed before the import finishes.
+      const send = (obj: Record<string, unknown>) => {
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+        } catch {
+          // Controller already closed (client navigated away) — ignore.
+        }
+      };
+      const log = (message: string) => {
+        console.log(`[import ${ms()}] ${message}`);
+        send({ type: "log", message });
+      };
 
-    // Flush all catalogue caches (records, search, browse, status) so the new
-    // data is served immediately rather than after each cache's TTL.
-    revalidateTag(CATALOGUE_TAG, { expire: 0 });
+      try {
+        log("Downloading the uploaded file…");
+        const res = await fetch(safeUrl);
+        if (!res.ok) {
+          throw new Error(`Could not fetch the uploaded file (HTTP ${res.status}).`);
+        }
+        const buffer = Buffer.from(await res.arrayBuffer());
+        log(`Downloaded ${(buffer.length / 1e6).toFixed(1)} MB. Starting import…`);
 
-    await del(safeUrl).catch(() => {
-      // Not fatal — the file will just sit in Blob storage until manually
-      // cleaned up. The import itself already succeeded.
-    });
+        const result = await importAndSwap(buffer, log);
 
-    console.log(`[import] complete at ${ms()}`);
-    return NextResponse.json({
-      rowCount: result.rowCount,
-      previousRowCount: result.previousRowCount,
-      lowRowCountWarning: result.lowRowCountWarning,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Import failed";
-    console.error(`[import] FAILED at ${ms()}: ${message}`, err);
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+        // Flush all catalogue caches (records, search, browse, status) so the
+        // new data is served immediately rather than after each cache's TTL.
+        revalidateTag(CATALOGUE_TAG, { expire: 0 });
+        await del(safeUrl).catch(() => {
+          // Not fatal — the file just lingers in Blob storage. Import succeeded.
+        });
+
+        log(`Finished in ${ms()}.`);
+        send({
+          type: "done",
+          rowCount: result.rowCount,
+          previousRowCount: result.previousRowCount,
+          lowRowCountWarning: result.lowRowCountWarning,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Import failed";
+        console.error(`[import ${ms()}] FAILED: ${message}`, err);
+        send({ type: "error", message, elapsed: ms() });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      // Hint to any proxy not to buffer the streamed response.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

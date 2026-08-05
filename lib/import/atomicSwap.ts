@@ -12,7 +12,7 @@ import {
   PREVIOUS_FTS_TABLE,
   PREVIOUS_CATALOG_FTS_TABLE,
 } from "@/lib/db/ddl";
-import { buildStagingTables } from "./importCsv";
+import { buildStagingTables, type ProgressFn } from "./importCsv";
 
 // importAndSwap/restorePrevious both rename tables in the same database.
 // Two of these running concurrently (a double-click, two admin tabs, two
@@ -72,14 +72,17 @@ async function releaseLock(): Promise<void> {
  * real against a live Turso database). Retrying the whole build is safe
  * because it always drops and fully rebuilds records_new from scratch. */
 async function buildStagingTablesWithRetry(
-  csvBuffer: Buffer
+  csvBuffer: Buffer,
+  onProgress?: ProgressFn
 ): Promise<{ rowCount: number }> {
   const attempts = 3;
   for (let i = 0; i < attempts; i++) {
     try {
-      return await buildStagingTables(csvBuffer);
+      return await buildStagingTables(csvBuffer, onProgress);
     } catch (err) {
       if (i === attempts - 1) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      onProgress?.(`A database error interrupted the save (${message}). Retrying (attempt ${i + 2} of ${attempts})…`);
       await sleep(1000 * (i + 1));
     }
   }
@@ -136,11 +139,15 @@ export interface ImportResult {
  * transaction) renames the live tables to "previous" and the staging
  * tables into the live table names. Works identically against a local
  * SQLite file or a remote Turso database — it's all just SQL. */
-export async function importAndSwap(csvBuffer: Buffer): Promise<ImportResult> {
+export async function importAndSwap(
+  csvBuffer: Buffer,
+  onProgress?: ProgressFn
+): Promise<ImportResult> {
   await acquireLock();
   try {
-    const { rowCount } = await buildStagingTablesWithRetry(csvBuffer);
+    const { rowCount } = await buildStagingTablesWithRetry(csvBuffer, onProgress);
 
+    onProgress?.("Swapping the new catalogue into place…");
     const client = await getClient();
     const liveExists = await tableExists(LIVE_TABLE);
     // Checked independently of liveExists: a `records` table created before
@@ -176,6 +183,7 @@ export async function importAndSwap(csvBuffer: Buffer): Promise<ImportResult> {
       throw err;
     }
     await stampUpdatedNow();
+    onProgress?.(`Done — the catalogue now has ${rowCount.toLocaleString()} records.`);
 
     const lowRowCountWarning =
       previousRowCount != null && rowCount < previousRowCount * 0.5;
