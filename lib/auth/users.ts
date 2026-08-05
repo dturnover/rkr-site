@@ -149,6 +149,40 @@ export async function createUser(input: {
   }
 }
 
+/** Replaces the password on an existing ACTIVE account, looked up by email.
+ * Used by the password-reset link (see lib/auth/invites.ts). Returns the user
+ * on success so the caller can sign them straight in. */
+export async function setPasswordByEmail(
+  email: string,
+  password: string
+): Promise<UserRow | null> {
+  await ensureUsersTable();
+  if (password.length < 8) return null;
+  const client = await getClient();
+  const em = normalizeEmail(email);
+  const res = await client.execute({
+    sql: `SELECT id, email, display_name, role, active, created_at
+          FROM users WHERE email = ? AND active = 1 LIMIT 1`,
+    args: [em],
+  });
+  const r = res.rows[0];
+  if (!r) return null;
+
+  const { hash, salt } = hashPassword(password);
+  await client.execute({
+    sql: `UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?`,
+    args: [hash, salt, Number(r.id)],
+  });
+  return {
+    id: Number(r.id),
+    email: String(r.email),
+    display_name: String(r.display_name),
+    role: r.role === "admin" ? "admin" : "editor",
+    active: Number(r.active),
+    created_at: String(r.created_at),
+  };
+}
+
 export async function setUserActive(id: number, active: boolean): Promise<void> {
   await ensureUsersTable();
   const client = await getClient();

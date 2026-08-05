@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { listUsers } from "@/lib/auth/users";
 import { listPendingInvites } from "@/lib/auth/invites";
-import { inviteUrl } from "@/lib/email/sendInvite";
+import { inviteUrl, isEmailConfigured } from "@/lib/email/send";
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import BlobUploadForm from "@/components/BlobUploadForm";
@@ -42,10 +42,14 @@ export default async function AdminPage({
   const imported = first(sp.imported);
   const warning = first(sp.warning) === "1";
   const restored = first(sp.restored);
-  const invited = first(sp.invited); // "sent" (emailed) | "link" (show link)
+  const invited = first(sp.invited); // "sent" | "link" (no provider) | "failed"
   const inviteRevoked = first(sp.inviteRevoked) === "1";
   const editorUpdated = first(sp.editorUpdated) === "1";
   const editorError = first(sp.editorError);
+  const reset = first(sp.reset); // "sent" | "link" | "failed"
+  const resetToken = first(sp.resetToken);
+  const mailTest = first(sp.mailTest); // "sent" | "link" | "failed" | "invalid"
+  const mailError = first(sp.mailError);
 
   const session = await getSession();
 
@@ -109,6 +113,7 @@ export default async function AdminPage({
   const editors = await listUsers();
   const pendingInvites = await listPendingInvites();
   const useBlobUpload = !!process.env.BLOB_READ_WRITE_TOKEN;
+  const emailReady = isEmailConfigured();
 
   return (
     <div className="max-w-xl mx-auto">
@@ -138,9 +143,43 @@ export default async function AdminPage({
           link below and send it to them yourself.
         </Banner>
       )}
+      {invited === "failed" && (
+        <Banner tone="bad">
+          Invite created, but the email couldn&rsquo;t be sent{mailError ? `: ${mailError}` : "."} Use
+          the copy-link button below to send it yourself.
+        </Banner>
+      )}
       {inviteRevoked && <Banner tone="good">Invite revoked.</Banner>}
+      {reset === "sent" && (
+        <Banner tone="good">
+          Password-reset link emailed. It works once and expires in 7 days.
+        </Banner>
+      )}
+      {(reset === "link" || reset === "failed") && resetToken && (
+        <Banner tone="warn">
+          <p className="mb-2">
+            {reset === "link"
+              ? "Password-reset link created (no mail provider configured) — send them this link:"
+              : `Reset link created, but the email couldn't be sent${mailError ? `: ${mailError}` : "."} Send them this link:`}
+          </p>
+          <CopyLink url={inviteUrl(resetToken)} />
+        </Banner>
+      )}
+      {mailTest === "sent" && (
+        <Banner tone="good">Test email sent. If it arrives, invites will work too.</Banner>
+      )}
+      {mailTest === "link" && (
+        <Banner tone="warn">
+          No mail provider configured &mdash; set RESEND_API_KEY and INVITE_FROM_EMAIL in Vercel.
+        </Banner>
+      )}
+      {mailTest === "failed" && (
+        <Banner tone="bad">Test email failed{mailError ? `: ${mailError}` : "."}</Banner>
+      )}
+      {mailTest === "invalid" && <Banner tone="bad">Enter a valid email address to test.</Banner>}
       {editorUpdated && <Banner tone="good">Editor access updated.</Banner>}
       {editorError === "duplicate-email" && <Banner tone="bad">That email already has an account.</Banner>}
+      {editorError === "no-user" && <Banner tone="bad">That account no longer exists.</Banner>}
       {editorError === "invalid" && (
         <Banner tone="bad">Enter a name and a valid email address.</Banner>
       )}
@@ -247,6 +286,41 @@ export default async function AdminPage({
         </Link>
       </section>
 
+      {/* Email delivery — status + a way to verify it without a real invite */}
+      <section className="frame-double bg-paper p-6 mb-6">
+        <h2 className="font-display text-lg text-ink mb-2">Email</h2>
+        {emailReady ? (
+          <>
+            <p className="font-body text-sm text-ink-soft mb-4">
+              Email is set up &mdash; invites and password resets send automatically. Send a test to
+              any address to confirm delivery.
+            </p>
+            <form action="/api/admin/editors" method="POST" className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="action" value="test-email" />
+              <label className="flex flex-col gap-1">
+                <span className="font-body text-xs uppercase tracking-wide text-ink-soft">
+                  Send a test email to
+                </span>
+                <input type="email" name="testEmail" required className={inputClass} />
+              </label>
+              <button
+                type="submit"
+                className="px-4 py-2 border border-frame text-ink font-body tracking-wide hover:bg-parchment-deep transition-colors"
+              >
+                Send Test
+              </button>
+            </form>
+          </>
+        ) : (
+          <p className="font-body text-sm text-ink-soft">
+            No mail provider configured, so invites and password resets show a{" "}
+            <strong>copyable link</strong> to send by hand instead &mdash; everything still works.
+            To enable automatic email, add <code>RESEND_API_KEY</code> and{" "}
+            <code>INVITE_FROM_EMAIL</code> in the Vercel project settings and redeploy.
+          </p>
+        )}
+      </section>
+
       {/* Manage Editors — provision access for named users */}
       <section className="frame-double bg-paper p-6 mb-6">
         <h2 className="font-display text-lg text-ink mb-2">Editors</h2>
@@ -287,16 +361,30 @@ export default async function AdminPage({
                       <span className="text-ink">{inv.display_name}</span>{" "}
                       <span className="text-ink-soft">&lt;{inv.email}&gt;</span>
                     </div>
-                    <form action="/api/admin/editors" method="POST" className="shrink-0">
-                      <input type="hidden" name="action" value="revoke-invite" />
-                      <input type="hidden" name="token" value={inv.token} />
-                      <button
-                        type="submit"
-                        className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink"
-                      >
-                        Revoke
-                      </button>
-                    </form>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {emailReady && (
+                        <form action="/api/admin/editors" method="POST">
+                          <input type="hidden" name="action" value="resend-invite" />
+                          <input type="hidden" name="token" value={inv.token} />
+                          <button
+                            type="submit"
+                            className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink whitespace-nowrap"
+                          >
+                            Resend email
+                          </button>
+                        </form>
+                      )}
+                      <form action="/api/admin/editors" method="POST">
+                        <input type="hidden" name="action" value="revoke-invite" />
+                        <input type="hidden" name="token" value={inv.token} />
+                        <button
+                          type="submit"
+                          className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink"
+                        >
+                          Revoke
+                        </button>
+                      </form>
+                    </div>
                   </div>
                   <CopyLink url={inviteUrl(inv.token)} />
                 </li>
@@ -320,16 +408,31 @@ export default async function AdminPage({
                   {!u.active && <span className="ml-2 text-xs uppercase tracking-wide text-ink-soft">disabled</span>}
                 </div>
                 {u.role !== "admin" && (
-                  <form action="/api/admin/editors" method="POST">
-                    <input type="hidden" name="id" value={u.id} />
-                    <input type="hidden" name="action" value={u.active ? "deactivate" : "reactivate"} />
-                    <button
-                      type="submit"
-                      className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink"
-                    >
-                      {u.active ? "Disable" : "Enable"}
-                    </button>
-                  </form>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {u.active && (
+                      <form action="/api/admin/editors" method="POST">
+                        <input type="hidden" name="id" value={u.id} />
+                        <input type="hidden" name="action" value="reset-password" />
+                        <button
+                          type="submit"
+                          className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink whitespace-nowrap"
+                          title="Email them a one-time link to choose a new password"
+                        >
+                          Reset password
+                        </button>
+                      </form>
+                    )}
+                    <form action="/api/admin/editors" method="POST">
+                      <input type="hidden" name="id" value={u.id} />
+                      <input type="hidden" name="action" value={u.active ? "deactivate" : "reactivate"} />
+                      <button
+                        type="submit"
+                        className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink"
+                      >
+                        {u.active ? "Disable" : "Enable"}
+                      </button>
+                    </form>
+                  </div>
                 )}
               </li>
             ))}

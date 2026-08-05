@@ -27,13 +27,14 @@ export default async function JoinPage({
 
   const invite = await getInvite(token);
   const usable = invite && isInviteUsable(invite);
+  const isReset = invite?.purpose === "reset";
 
   if (!usable) {
     return (
       <div className="max-w-sm mx-auto">
-        <h1 className="font-display text-2xl text-ink mb-4 text-center">Invite Link</h1>
+        <h1 className="font-display text-2xl text-ink mb-4 text-center">Account Link</h1>
         <Banner tone="bad">
-          This invite link is no longer valid — it may have expired or already been used. Ask the
+          This link is no longer valid &mdash; it may have expired or already been used. Ask the
           site admin to send a fresh one.
         </Banner>
       </div>
@@ -42,15 +43,26 @@ export default async function JoinPage({
 
   return (
     <div className="max-w-sm mx-auto">
-      <h1 className="font-display text-2xl text-ink mb-2 text-center">Set Your Password</h1>
+      <h1 className="font-display text-2xl text-ink mb-2 text-center">
+        {isReset ? "Choose a New Password" : "Set Your Password"}
+      </h1>
       <p className="font-body text-sm text-ink-soft mb-6 text-center">
-        Welcome, <strong>{invite.display_name}</strong>. Choose a password to finish setting up your
-        editor account for Roots Knotty Roots.
+        {isReset ? (
+          <>
+            Hi <strong>{invite.display_name}</strong>. Choose a new password for your Roots Knotty
+            Roots editor account.
+          </>
+        ) : (
+          <>
+            Welcome, <strong>{invite.display_name}</strong>. Choose a password to finish setting up
+            your editor account for Roots Knotty Roots.
+          </>
+        )}
       </p>
 
       {error === "weak" && <Banner tone="bad">Password must be at least 8 characters.</Banner>}
       {error === "expired" && (
-        <Banner tone="bad">This invite link is no longer valid. Ask for a fresh one.</Banner>
+        <Banner tone="bad">This link is no longer valid. Ask for a fresh one.</Banner>
       )}
 
       <form
@@ -86,7 +98,7 @@ export default async function JoinPage({
           type="submit"
           className="mt-2 px-4 py-2 bg-frame text-paper font-body tracking-wide hover:bg-rasta-red transition-colors"
         >
-          Set Password &amp; Sign In
+          {isReset ? "Save Password & Sign In" : "Set Password & Sign In"}
         </button>
       </form>
     </div>
