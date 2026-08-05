@@ -3,6 +3,7 @@ import { revalidateTag } from "next/cache";
 import { del } from "@vercel/blob";
 import { isAdminAuthenticated } from "@/lib/auth/requireAdmin";
 import { importAndSwap } from "@/lib/import/atomicSwap";
+import { canDiff, importDiff } from "@/lib/import/diffImport";
 import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
 // A full catalogue rebuild (135k+ rows, generated columns, FTS indexing) is a
@@ -86,7 +87,12 @@ export async function POST(request: NextRequest) {
         const buffer = Buffer.from(await res.arrayBuffer());
         log(`Downloaded ${(buffer.length / 1e6).toFixed(1)} MB. Starting import…`);
 
-        const result = await importAndSwap(buffer, log);
+        // If a catalogue is already loaded, apply only the differences (fast,
+        // and the only thing that fits Turso's write budget). The very first
+        // load on an empty database has nothing to diff against, so fall back
+        // to a full build for that one case.
+        const useDiff = await canDiff();
+        const result = useDiff ? await importDiff(buffer, log) : await importAndSwap(buffer, log);
 
         // Flush all catalogue caches (records, search, browse, status) so the
         // new data is served immediately rather than after each cache's TTL.

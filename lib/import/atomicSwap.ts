@@ -36,7 +36,7 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function acquireLock(): Promise<void> {
+export async function acquireLock(): Promise<void> {
   const client = await getClient();
   await client.execute(
     `CREATE TABLE IF NOT EXISTS ${LOCK_TABLE} (id INTEGER PRIMARY KEY CHECK (id = 1), locked_at TEXT NOT NULL)`
@@ -61,7 +61,7 @@ async function acquireLock(): Promise<void> {
   }
 }
 
-async function releaseLock(): Promise<void> {
+export async function releaseLock(): Promise<void> {
   const client = await getClient();
   await client.execute(`DELETE FROM ${LOCK_TABLE} WHERE id = 1`).catch(() => {});
 }
@@ -107,7 +107,7 @@ async function countRows(table: string): Promise<number> {
 // Small standalone table (not part of the swap rotation) recording when the
 // live data last changed. There's no filesystem mtime to fall back on once
 // this can run against a remote Turso database, so track it explicitly.
-async function stampUpdatedNow(): Promise<void> {
+export async function stampUpdatedNow(): Promise<void> {
   const client = await getClient();
   await client.execute(
     `CREATE TABLE IF NOT EXISTS import_meta (id INTEGER PRIMARY KEY CHECK (id = 1), updated_at TEXT NOT NULL)`

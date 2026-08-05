@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import iconv from "iconv-lite";
 import { parse } from "csv-parse";
@@ -51,7 +52,9 @@ export const CSV_FIELDS = [
 // Every parsed field is now a real column (the former `blank1` spacer became
 // `pressing`), so all of CSV_FIELDS is inserted.
 const INSERT_COLUMNS = [...CSV_FIELDS];
-const FTS_COLUMNS = ["title", "title_credit", "artist", "artist_credit", "notes"] as const;
+// Exported so the diff importer (lib/import/diffImport.ts) writes exactly the
+// same columns in the same order as the full rebuild.
+export const FTS_COLUMNS = ["title", "title_credit", "artist", "artist_credit", "notes"] as const;
 
 // Source expression for each CATALOG_FTS_COLUMNS entry, evaluated against
 // the staging table in the INSERT...SELECT below. _norm columns are reused
@@ -284,14 +287,19 @@ const CHUNKS_PER_BATCH = 10;
  * function and return a non-JSON platform error to the browser; streaming
  * keeps it near ~200-300MB). The editor overlay is loaded up front (it's
  * editor-generated, so small) and applied to each row as it streams past. */
-export async function buildStagingTables(
+/** Yields the FINAL target set of records for an import: every row from the
+ * uploaded file with the editor overlay's field-edits applied (filling blanks
+ * only — dad's value always wins), followed by any editor-added records the
+ * file doesn't contain. This is the single source of truth for "what the
+ * catalogue should be" — used by BOTH the full rebuild (buildStagingTables) and
+ * the incremental diff (lib/import/diffImport.ts), so the two can never
+ * disagree about the target state. Streamed, so memory stays flat. */
+export async function* streamTargetRows(
   csvBuffer: Buffer,
   onProgress?: ProgressFn
-): Promise<{ rowCount: number }> {
-  const client = await getClient();
-
+): AsyncGenerator<FieldRow> {
   // The editor overlay, indexed by record key. Field edits fill only blanks
-  // (dad's uploaded value always wins); editor-added records dad's file doesn't
+  // (dad's uploaded value always wins); editor-added records the file doesn't
   // contain are appended at the end, while any the file now contains are
   // dropped (his version wins). Records are matched by computeRecordKey (matrix
   // number, else label no + artist + title) — see lib/editor/overlay.ts.
@@ -306,6 +314,57 @@ export async function buildStagingTables(
   }
   const editorRecordsByKey = new Map<string, Record<string, string | null>>();
   for (const er of editorRecords) editorRecordsByKey.set(er.record_key, er.data);
+
+  for await (const row of parseUploadRows(csvBuffer)) {
+    const key = computeRecordKey(row);
+    const edits = fieldEditsByKey.get(key);
+    if (edits) {
+      for (const { field, value } of edits) {
+        if (nullIfBlank(row[field]) == null) row[field] = value; // fill blanks only
+      }
+    }
+    // Dad's file contains this record → his version wins; drop the editor copy.
+    if (editorRecordsByKey.size > 0) editorRecordsByKey.delete(key);
+    yield row;
+  }
+
+  // Append editor-added records not present in dad's file.
+  let editorAppended = 0;
+  for (const data of editorRecordsByKey.values()) {
+    const row: FieldRow = {};
+    for (const f of CSV_FIELDS) row[f] = null;
+    for (const f of EDITABLE_FIELDS) row[f] = nullIfBlank(data[f] ?? null);
+    editorAppended++;
+    yield row;
+  }
+  if (editorAppended > 0) {
+    onProgress?.(`Re-applied ${editorAppended.toLocaleString()} editor-added record(s).`);
+  }
+}
+
+// The full ordered column list a records row is written with (the 24 catalogue
+// fields + year_sort + the 8 _norm columns), and a matching values builder.
+// Shared with the diff importer so an inserted row is byte-identical either way.
+export const RECORD_INSERT_COLUMNS = [...INSERT_COLUMNS, "year_sort", ...NORM_COLUMNS];
+export function recordInsertValues(byField: FieldRow): (string | number | null)[] {
+  const { values, yearSort, norms } = insertPartsFor(byField);
+  return [...values, yearSort, ...norms];
+}
+
+/** A stable fingerprint of a record's 24 catalogue fields. Both the live
+ * catalogue and a fresh upload normalize identically (null/blank → ""), so two
+ * records with the same content produce the same hash — which is how the diff
+ * importer tells unchanged rows (skip) from new/changed ones (write). */
+export function contentHashOf(row: Record<string, string | null>): string {
+  const parts = CSV_FIELDS.map((f) => row[f] ?? "");
+  return crypto.createHash("sha1").update(parts.join("")).digest("base64");
+}
+
+export async function buildStagingTables(
+  csvBuffer: Buffer,
+  onProgress?: ProgressFn
+): Promise<{ rowCount: number }> {
+  const client = await getClient();
 
   await client.executeMultiple(`
     DROP TABLE IF EXISTS ${STAGING_FTS_TABLE};
@@ -367,33 +426,15 @@ export async function buildStagingTables(
   let nextReport = 10000;
   onProgress?.("Reading the file and saving records…");
 
-  for await (const row of parseUploadRows(csvBuffer)) {
-    const key = computeRecordKey(row);
-    const edits = fieldEditsByKey.get(key);
-    if (edits) {
-      for (const { field, value } of edits) {
-        if (nullIfBlank(row[field]) == null) row[field] = value; // fill blanks only
-      }
-    }
-    // Dad's file contains this record → his version wins; drop the editor copy.
-    if (editorRecordsByKey.size > 0) editorRecordsByKey.delete(key);
+  // The overlay-applied target rows (file rows + editor edits + editor-added
+  // records) come from the shared generator so this and the diff importer build
+  // the identical target catalogue.
+  for await (const row of streamTargetRows(csvBuffer, onProgress)) {
     await addRow(row);
     if (id >= nextReport) {
       onProgress?.(`Saved ${id.toLocaleString()} records (${secs()}s)…`);
       nextReport += 10000;
     }
-  }
-
-  // Append editor-added records not present in dad's file.
-  const beforeEditorAppend = id;
-  for (const data of editorRecordsByKey.values()) {
-    const row: FieldRow = {};
-    for (const f of CSV_FIELDS) row[f] = null;
-    for (const f of EDITABLE_FIELDS) row[f] = nullIfBlank(data[f] ?? null);
-    await addRow(row);
-  }
-  if (id > beforeEditorAppend) {
-    onProgress?.(`Re-applied ${(id - beforeEditorAppend).toLocaleString()} editor-added record(s).`);
   }
 
   sealChunk();
