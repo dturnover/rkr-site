@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
 import HeaderSearchForm from "@/components/HeaderSearchForm";
 import GuideContent from "@/components/GuideContent";
+import StudioPhoto from "@/components/StudioPhoto";
 import { PROSE_CLASS } from "@/components/ProsePage";
 
 // The catalogue can change at any time via an admin CSV upload without a
@@ -87,6 +88,12 @@ export default async function Home() {
         </div>
       </section>
       */}
+
+      {/* Sits after search (the site's primary job) and before the guide, so it
+          reads as a moment of context rather than something in the way. */}
+      <section className="border-t border-paper-stain pt-8">
+        <StudioPhoto />
+      </section>
 
       <section className="border-t border-paper-stain pt-8">
         <h2 className="font-display text-2xl text-center text-ink mb-5">Using Roots Knotty Roots</h2>
