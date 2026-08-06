@@ -96,7 +96,11 @@ export default async function RootLayout({
         {/* Mobile-only, home-only: puts the search panel above the browse nav
             on phones without touching the desktop layout. */}
         <HomeMobileSearch />
-        <div className="flex-1 w-full flex flex-col lg:flex-row lg:items-start px-3 sm:px-4 lg:px-6 py-6 gap-4 lg:gap-6">
+        {/* max-w is in rem so it grows with the large-screen root font scaling
+            in globals.css. Without a cap, an ultrawide monitor pinned the
+            sidebar to the far left edge with the centred content stranded a
+            long way from it. */}
+        <div className="flex-1 w-full max-w-[96rem] mx-auto flex flex-col lg:flex-row lg:items-start px-3 sm:px-4 lg:px-6 py-6 gap-4 lg:gap-6">
           <SiteSidebar isEditor={!!session} isAdmin={session?.role === "admin"} />
           <main className="flex-1 min-w-0 w-full">{children}</main>
         </div>

@@ -47,6 +47,40 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Large-monitor scaling.
+ *
+ * On a 1440p/4K desktop the site read as tiny type marooned in empty
+ * parchment: every size in the design is rem-based (Tailwind's spacing, type
+ * scale, and the max-w-* container caps alike), so they were all pinned to the
+ * browser's 16px default no matter how big the display was.
+ *
+ * Raising the ROOT font size at wide viewports scales the whole design
+ * proportionally in one move — text, padding, gaps, and the content columns
+ * grow together, so line length stays comfortable instead of the text simply
+ * getting wider. This is done with media queries rather than JS device
+ * detection so it costs nothing, never flashes the wrong size, and doesn't
+ * vary the HTML (which would break caching).
+ *
+ * Media-query `rem` is always relative to the browser default, not to the value
+ * set here, so these thresholds can't feed back into themselves. Steps are
+ * modest on purpose — the aim is filling the screen, not magnifying it.
+ */
+@media (min-width: 1600px) {
+  html {
+    font-size: 17px;
+  }
+}
+@media (min-width: 1920px) {
+  html {
+    font-size: 18px;
+  }
+}
+@media (min-width: 2560px) {
+  html {
+    font-size: 20px;
+  }
+}
+
 /* `.font-display` (a Tailwind utility) sets only the font-family, so pin the
    weight here. Bold Oswald gives headings a strong, poster-like presence. */
 .font-display {

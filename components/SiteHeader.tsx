@@ -6,6 +6,10 @@ import HeaderSearchForm from "./HeaderSearchForm";
 export default function SiteHeader() {
   return (
     <header className="border-b-2 border-frame bg-parchment-deep/60">
+      {/* Deliberately NOT widened for large monitors: the banner scales to its
+          container, and letting it fill the full content width made it swallow
+          the entire first screen. The rem-based cap already grows it in step
+          with the large-screen root font scaling in globals.css. */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 pb-5">
         <Link href="/" className="block" aria-label="Roots Knotty Roots — home">
           <HeaderBanner />
