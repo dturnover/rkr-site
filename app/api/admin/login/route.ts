@@ -35,12 +35,12 @@ export async function POST(request: NextRequest) {
   // is only a fallback — it grants admin regardless of the typed email (that
   // password IS the admin secret), guaranteeing dad can log in even with an
   // empty/unreachable users table.
-  let session: { uid: number | "env-admin"; role: "admin" | "editor"; name: string } | null = null;
+  let session: { uid: number | "env-admin"; role: "admin" | "editor"; name: string; ep?: number } | null = null;
 
   if (email) {
     const user = await verifyCredentials(email, password).catch(() => null);
     if (user) {
-      session = { uid: user.id, role: user.role, name: user.display_name };
+      session = { uid: user.id, role: user.role, name: user.display_name, ep: user.session_epoch };
     }
   }
   if (!session && checkAdminPassword(password)) {

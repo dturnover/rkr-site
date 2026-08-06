@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL(`/join/${token}?error=weak`, request.url));
   }
 
-  let session: { uid: number; role: "admin" | "editor"; name: string };
+  let session: { uid: number; role: "admin" | "editor"; name: string; ep: number };
 
   if (invite.purpose === "reset") {
     const user = await setPasswordByEmail(invite.email, password);
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       // Account disabled or removed since the link was issued.
       return NextResponse.redirect(new URL(`/join/${token}?error=expired`, request.url));
     }
-    session = { uid: user.id, role: user.role, name: user.display_name };
+    session = { uid: user.id, role: user.role, name: user.display_name, ep: user.session_epoch };
   } else {
     const created = await createUser({
       email: invite.email,
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.redirect(new URL(`/join/${token}?error=weak`, request.url));
     }
-    session = { uid: created.id, role: "editor", name: invite.display_name };
+    session = { uid: created.id, role: "editor", name: invite.display_name, ep: 0 };
   }
 
   await markInviteAccepted(token);

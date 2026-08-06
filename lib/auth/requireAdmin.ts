@@ -25,7 +25,18 @@ export const getSession = cache(async (): Promise<SessionPayload | null> => {
   const user = await getActiveUserById(session.uid).catch(() => null);
   if (!user) return null;
 
-  return { uid: user.id, role: user.role, name: user.display_name, exp: session.exp };
+  // Reject a cookie issued before the user's current session_epoch — that's how
+  // a password reset immediately signs out other devices. A cookie predating
+  // this field counts as epoch 0, matching the column default.
+  if ((session.ep ?? 0) !== user.session_epoch) return null;
+
+  return {
+    uid: user.id,
+    role: user.role,
+    name: user.display_name,
+    exp: session.exp,
+    ep: user.session_epoch,
+  };
 });
 
 /** Admin-only gate (uploads, editor provisioning, restore). */

@@ -53,6 +53,19 @@ export type ContactResult =
   | { ok: true; emailed: boolean }
   | { ok: false; error: "invalid" };
 
+// A single address with no commas, spaces, or control characters. `includes("@")`
+// alone would accept "a@b.com, someone-else@x.com", which lands in the Reply-To
+// header — letting a submitter quietly add a third party to replies. This is
+// deliberately conservative rather than RFC-exhaustive.
+const EMAIL_RE = /^[^\s@,;:<>"'\\()[\]]+@[^\s@,;:<>"'\\()[\]]+\.[^\s@,;:<>"'\\()[\]]{2,}$/;
+
+// Strips control characters (notably CR/LF) from anything interpolated into an
+// email header such as the subject line.
+function headerSafe(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\u0000-\u001F\u007F]/g, " ").trim();
+}
+
 function valid(input: ContactInput): boolean {
   const name = input.name.trim();
   const email = input.email.trim();
@@ -60,7 +73,7 @@ function valid(input: ContactInput): boolean {
   return (
     name.length > 0 &&
     name.length <= MAX_NAME &&
-    email.includes("@") &&
+    EMAIL_RE.test(email) &&
     email.length <= 254 &&
     message.length >= MIN_MESSAGE &&
     message.length <= MAX_MESSAGE
@@ -90,7 +103,7 @@ export async function submitContact(input: ContactInput): Promise<ContactResult>
   const sent = await sendEmail({
     to: contactRecipient(),
     replyTo: email,
-    subject: `Roots Knotty Roots — message from ${name}`,
+    subject: `Roots Knotty Roots — message from ${headerSafe(name)}`,
     text: `From: ${name} <${email}>\n\n${message}`,
     html:
       `<p><strong>From:</strong> ${escapeHtml(name)} &lt;${escapeHtml(email)}&gt;</p>` +

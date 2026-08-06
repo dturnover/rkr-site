@@ -23,6 +23,21 @@ function ensureUsersTable(): Promise<void> {
           created_at    TEXT NOT NULL
         )
       `);
+      // session_epoch invalidates already-issued session cookies: it's stamped
+      // into the cookie at login and re-checked on every request, and bumping it
+      // (on a password reset) makes every outstanding session for that user
+      // stop working immediately. Added later, so migrate in place; the default
+      // 0 matches what an old cookie is treated as, so nobody is logged out by
+      // the upgrade itself.
+      const info = await client.execute(`PRAGMA table_info(users)`);
+      const hasEpoch = info.rows.some(
+        (r) => String((r as unknown as { name: string }).name) === "session_epoch"
+      );
+      if (!hasEpoch) {
+        await client.execute(
+          `ALTER TABLE users ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 0`
+        );
+      }
     })().catch((err) => {
       // Don't cache a failed ensure — allow a retry on the next call.
       ensured = null;
@@ -39,6 +54,7 @@ export interface UserRow {
   role: "admin" | "editor";
   active: number;
   created_at: string;
+  session_epoch: number;
 }
 
 function normalizeEmail(email: string): string {
@@ -52,7 +68,7 @@ export async function verifyCredentials(email: string, password: string): Promis
   await ensureUsersTable();
   const client = await getClient();
   const res = await client.execute({
-    sql: `SELECT id, email, display_name, password_hash, password_salt, role, active, created_at
+    sql: `SELECT id, email, display_name, password_hash, password_salt, role, active, created_at, session_epoch
           FROM users WHERE email = ? AND active = 1 LIMIT 1`,
     args: [normalizeEmail(email)],
   });
@@ -73,6 +89,7 @@ export async function verifyCredentials(email: string, password: string): Promis
     role: row.role === "admin" ? "admin" : "editor",
     active: Number(row.active),
     created_at: String(row.created_at),
+    session_epoch: Number(row.session_epoch ?? 0),
   };
 }
 
@@ -83,7 +100,7 @@ export async function getActiveUserById(id: number): Promise<UserRow | null> {
   await ensureUsersTable();
   const client = await getClient();
   const res = await client.execute({
-    sql: `SELECT id, email, display_name, role, active, created_at
+    sql: `SELECT id, email, display_name, role, active, created_at, session_epoch
           FROM users WHERE id = ? AND active = 1 LIMIT 1`,
     args: [id],
   });
@@ -96,6 +113,7 @@ export async function getActiveUserById(id: number): Promise<UserRow | null> {
     role: r.role === "admin" ? "admin" : "editor",
     active: Number(r.active),
     created_at: String(r.created_at),
+    session_epoch: Number(r.session_epoch ?? 0),
   };
 }
 
@@ -103,7 +121,7 @@ export async function listUsers(): Promise<UserRow[]> {
   await ensureUsersTable();
   const client = await getClient();
   const res = await client.execute(
-    `SELECT id, email, display_name, role, active, created_at FROM users ORDER BY created_at DESC`
+    `SELECT id, email, display_name, role, active, created_at, session_epoch FROM users ORDER BY created_at DESC`
   );
   return res.rows.map((r) => ({
     id: Number(r.id),
@@ -112,6 +130,7 @@ export async function listUsers(): Promise<UserRow[]> {
     role: r.role === "admin" ? "admin" : "editor",
     active: Number(r.active),
     created_at: String(r.created_at),
+    session_epoch: Number(r.session_epoch ?? 0),
   }));
 }
 
@@ -161,17 +180,21 @@ export async function setPasswordByEmail(
   const client = await getClient();
   const em = normalizeEmail(email);
   const res = await client.execute({
-    sql: `SELECT id, email, display_name, role, active, created_at
+    sql: `SELECT id, email, display_name, role, active, created_at, session_epoch
           FROM users WHERE email = ? AND active = 1 LIMIT 1`,
     args: [em],
   });
   const r = res.rows[0];
   if (!r) return null;
 
+  // Bumping session_epoch invalidates every session cookie issued before this
+  // change — a password reset is exactly when you need existing sessions on
+  // other devices to stop working.
   const { hash, salt } = hashPassword(password);
+  const newEpoch = Number(r.session_epoch ?? 0) + 1;
   await client.execute({
-    sql: `UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?`,
-    args: [hash, salt, Number(r.id)],
+    sql: `UPDATE users SET password_hash = ?, password_salt = ?, session_epoch = ? WHERE id = ?`,
+    args: [hash, salt, newEpoch, Number(r.id)],
   });
   return {
     id: Number(r.id),
@@ -180,6 +203,7 @@ export async function setPasswordByEmail(
     role: r.role === "admin" ? "admin" : "editor",
     active: Number(r.active),
     created_at: String(r.created_at),
+    session_epoch: newEpoch,
   };
 }
 

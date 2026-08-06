@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 // display name) — not just "is admin" like the old single-password cookie —
 // so editor attribution and role gating work. Signed with an HMAC over
 // ADMIN_COOKIE_SECRET so the client can't forge or tamper with the payload;
-// httpOnly/SameSite=Strict are set at the call site (login route).
+// httpOnly/SameSite and the rest live in SESSION_COOKIE_OPTIONS below.
 export const SESSION_COOKIE_NAME = "rkr_admin";
 const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
 export const SESSION_MAX_AGE_SECONDS = SEVEN_DAYS_SECONDS;
@@ -39,6 +39,12 @@ export interface SessionPayload {
   role: Role;
   name: string;
   exp: number;
+  /** The user's session_epoch when this cookie was issued. Compared against the
+   * current value on every request, so bumping it (on a password reset) revokes
+   * outstanding sessions. Absent on cookies issued before this existed, which
+   * are treated as epoch 0 — the column's default — so the upgrade logs nobody
+   * out on its own. */
+  ep?: number;
 }
 
 function getSecret(): string {
@@ -81,6 +87,7 @@ export function readSessionCookie(value: string | undefined | null): SessionPayl
     if (payload.role !== "admin" && payload.role !== "editor") return null;
     if (typeof payload.name !== "string") return null;
     if (typeof payload.uid !== "number" && payload.uid !== "env-admin") return null;
+    if (payload.ep !== undefined && typeof payload.ep !== "number") return null;
     return payload as SessionPayload;
   } catch {
     return null;
