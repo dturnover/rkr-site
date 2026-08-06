@@ -2,10 +2,12 @@ import Link from "next/link";
 import { Suspense } from "react";
 import HeaderBanner from "./HeaderBanner";
 import HeaderSearchForm from "./HeaderSearchForm";
+import StudioPhoto from "./StudioPhoto";
 
 export default function SiteHeader() {
   return (
-    <header className="border-b-2 border-frame bg-parchment-deep/60">
+    <header className="relative border-b-2 border-frame bg-parchment-deep/60">
+      <StudioPhoto />
       {/* Deliberately NOT widened for large monitors: the banner scales to its
           container, and letting it fill the full content width made it swallow
           the entire first screen. The rem-based cap already grows it in step
