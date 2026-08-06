@@ -8,10 +8,17 @@ import { allowRequest } from "@/lib/rateLimit";
 // unauthenticated way to tie up long-running functions. Any future search
 // surface should call this too.
 //
-// Generous enough that no real person searching by hand will hit it; a
-// distributed flood is the platform firewall's job. Results are cached, so this
-// mainly caps one IP firing many *distinct* queries (cache misses) in a burst.
-export const SEARCH_RATE_LIMIT = 40; // requests
+// The limit is per IP, and mobile carriers put many subscribers behind ONE
+// public address (CGNAT) — so this budget is shared by everyone on that
+// carrier, not by one person. Sized for that: 40/min was comfortable for a
+// single visitor but a group of real phone users arriving together (a link
+// shared to a large community, say) could collectively trip it and be told
+// they were "searching very quickly". A scripted abuser blows past any of these
+// numbers immediately, so the higher ceiling costs no real protection —
+// especially as results are cached, so this mainly caps one source firing many
+// *distinct* queries (cache misses) in a burst. A genuine distributed flood is
+// the platform firewall's job, not this.
+export const SEARCH_RATE_LIMIT = 150; // requests
 export const SEARCH_RATE_WINDOW_MS = 60_000; // per minute
 
 /** Records one search from the caller's IP; false means "over the limit". */
