@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import TrackDetailCard from "@/components/TrackDetailCard";
@@ -32,6 +33,58 @@ function safeBackHref(value: string | undefined): string | null {
   }
   if (resolved.origin !== DUMMY_ORIGIN) return null;
   return `${resolved.pathname}${resolved.search}`;
+}
+
+// Per-record title/description. Without this every one of the 135k detail
+// pages inherited the site-wide title, so to a search engine they looked like
+// 135k copies of the same page — which suppresses how many get indexed at all
+// and means none of them match a search for the record itself. A title built
+// from artist, title, label and year is exactly what someone hunting a
+// specific pressing types in.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const recordId = parseInt(id, 10);
+  if (!Number.isFinite(recordId)) return {};
+  const record = await getRecordById(recordId);
+  if (!record) return {};
+
+  const artist = record.artist?.trim();
+  const title = record.title?.trim();
+  const heading = [artist, title].filter(Boolean).join(" – ") || "Record";
+
+  // Release parenthetical: "(Studio One, 1968)" — omitted entirely if neither
+  // is known, rather than leaving empty brackets.
+  const release = [record.label?.trim(), record.year?.trim()].filter(Boolean).join(", ");
+  const pageTitle = release ? `${heading} (${release})` : heading;
+
+  // The description reads as a sentence and carries the fields collectors
+  // actually search by (label number, matrix number, producer, format).
+  const facts: string[] = [];
+  if (record.label_number?.trim()) facts.push(`label no. ${record.label_number.trim()}`);
+  if (record.matrix_number?.trim()) facts.push(`matrix ${record.matrix_number.trim()}`);
+  if (record.producer?.trim()) facts.push(`produced by ${record.producer.trim()}`);
+  if (record.format?.trim()) facts.push(`${record.format.trim()}"`);
+  if (record.country?.trim()) facts.push(record.country.trim());
+  const bSide = record.b_side_title?.trim();
+
+  const description =
+    `${heading}${release ? ` — ${release}` : ""}. ` +
+    (bSide ? `B-side: ${bSide}. ` : "") +
+    (facts.length ? `${facts.join(", ")}. ` : "") +
+    `Catalogue entry in the Roots Knotty Roots Jamaican singles discography.`;
+
+  const canonical = `/records/${recordId}`;
+  return {
+    title: pageTitle,
+    description,
+    alternates: { canonical },
+    openGraph: { title: pageTitle, description, url: canonical, type: "article" },
+    twitter: { title: pageTitle, description },
+  };
 }
 
 export default async function RecordPage({

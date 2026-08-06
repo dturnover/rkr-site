@@ -237,8 +237,14 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
   // generateSitemaps() emits child sitemaps at /sitemap/0.xml, /sitemap/1.xml,
   // … and this Next version does NOT serve a combined /sitemap.xml index
   // (confirmed: it 404s), so list every child sitemap explicitly.
+  // The index is listed first (it's the single URL to hand to Search Console),
+  // followed by the children so a crawler that ignores indexes still finds
+  // every one.
   const chunks = await sitemapChunkCount();
-  const sitemaps = Array.from({ length: chunks }, (_, i) => `${SITE_URL}/sitemap/${i}.xml`);
+  const sitemaps = [
+    `${SITE_URL}/sitemap_index.xml`,
+    ...Array.from({ length: chunks }, (_, i) => `${SITE_URL}/sitemap/${i}.xml`),
+  ];
 
   return {
     rules: [
