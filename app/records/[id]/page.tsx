@@ -87,10 +87,22 @@ export default async function RecordPage({
         </div>
       )}
 
+      {/* Editors reach the tools by scrolling past the whole detail card, which
+          on a phone is a long way down and easy to miss entirely — so surface a
+          jump link up here too. */}
+      {isEditor && (
+        <a
+          href="#editor-tools"
+          className="inline-block mb-3 px-3 py-1.5 border border-frame text-ink font-body text-sm tracking-wide hover:bg-parchment-deep transition-colors"
+        >
+          ✎ Edit this track
+        </a>
+      )}
+
       <TrackDetailCard record={record} />
 
       {isEditor && (
-        <div className="mt-6">
+        <div id="editor-tools" className="mt-6 scroll-mt-4">
           <EditorPanel record={record} log={log} editorName={session.name} />
         </div>
       )}

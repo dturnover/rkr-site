@@ -24,6 +24,12 @@ export default function SiteFooter() {
           >
             Facebook group
           </a>
+          <span className="text-ink-soft"> &middot; </span>
+          {/* Editors sign in here on a new device or after being signed out.
+              /admin is noindex, so this link is the only way to find it. */}
+          <Link href="/admin" className="text-ink-soft underline hover:text-rasta-red">
+            Editor sign-in
+          </Link>
         </p>
         <Image
           src="/rkr-logo.png"

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
   SESSION_COOKIE_NAME,
-  SESSION_MAX_AGE_SECONDS,
+  SESSION_COOKIE_OPTIONS,
   createSessionCookie,
 } from "@/lib/auth/session";
 import { createUser, setPasswordByEmail } from "@/lib/auth/users";
@@ -58,13 +58,7 @@ export async function POST(request: NextRequest) {
   await markInviteAccepted(token);
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, createSessionCookie(session), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-  });
+  cookieStore.set(SESSION_COOKIE_NAME, createSessionCookie(session), SESSION_COOKIE_OPTIONS);
 
   // A brand-new editor gets the welcome guide; a returning one just goes to
   // their account page.

@@ -9,6 +9,25 @@ export const SESSION_COOKIE_NAME = "rkr_admin";
 const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
 export const SESSION_MAX_AGE_SECONDS = SEVEN_DAYS_SECONDS;
 
+/** The one definition of how the session cookie is written, so the login and
+ * invite-acceptance paths can't drift apart.
+ *
+ * sameSite is "lax", NOT "strict". Under Strict the browser withholds the
+ * cookie on ANY navigation that originates off-site — so an editor who opened a
+ * track link from a text message, an email, or a search result landed on a page
+ * that rendered as signed-out (observed: the editor nav links and the Editor
+ * Tools panel simply weren't there, until they clicked something internal).
+ * Lax still withholds the cookie on cross-site POSTs, which is the CSRF
+ * protection these plain-form endpoints actually rely on, while sending it on
+ * ordinary top-level GET navigations. */
+export const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  path: "/",
+  maxAge: SESSION_MAX_AGE_SECONDS,
+} as const;
+
 export type Role = "admin" | "editor";
 
 // uid is the users-table id for a provisioned account, or the sentinel
