@@ -3,9 +3,9 @@ import { FACEBOOK_GROUP_URL } from "@/lib/siteLinks";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
 export const metadata: Metadata = {
-  title: "Contact",
+  title: "Corrections & Contact",
   description:
-    "Get in touch with Roots Knotty Roots — corrections, additions, questions, or to join the collectors' community.",
+    "Suggest a correction or addition to the Roots Knotty Roots discography — wrong year, missing pressing, or a record that isn't listed — or get in touch with the compilers.",
 };
 
 const inputClass =
@@ -25,9 +25,11 @@ export default async function ContactPage({
 
   return (
     <div className="max-w-3xl mx-auto">
-      <h1 className="font-display text-3xl sm:text-4xl text-ink mb-4 text-center">Contact</h1>
+      <h1 className="font-display text-3xl sm:text-4xl text-ink mb-4 text-center">
+        Corrections &amp; Contact
+      </h1>
       <p className="font-body text-ink-soft italic text-center mb-8">
-        Corrections, additions, questions &mdash; or just to say the discography helped.
+        Spotted something wrong or missing? This is the place. Questions and hellos welcome too.
       </p>
 
       {sent === "1" && (
@@ -49,11 +51,13 @@ export default async function ContactPage({
       )}
 
       <section className="frame-double bg-paper p-6 mb-8">
-        <h2 className="font-display text-xl text-ink mb-2">Send a message</h2>
+        <h2 className="font-display text-xl text-ink mb-2">Suggest a correction</h2>
         <p className="font-body text-sm text-ink-soft mb-5">
-          Spotted a wrong date, a missing pressing, or a record that isn&rsquo;t here at all?
-          That&rsquo;s exactly the kind of note we want. Please include the artist, title, and label
-          number where you can &mdash; it makes checking much faster.
+          A wrong year or producer, a missing pressing, a record that isn&rsquo;t here at all
+          &mdash; that&rsquo;s exactly the kind of note we want, and it&rsquo;s how the discography
+          has been built for decades. Please include the <strong>artist, title and label
+          number</strong> (and the matrix number if you have the record in hand), so the entry can
+          be found and checked quickly. General questions are welcome here too.
         </p>
 
         <form action="/api/contact" method="POST" className="flex flex-col gap-4">

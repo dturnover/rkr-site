@@ -8,7 +8,10 @@ const ABOUT_LINKS: { href: string; label: string }[] = [
   { href: "/guide", label: "User's Guide" },
   { href: "/history", label: "Acknowledgements" },
   { href: "/interviews", label: "Interviews & Features" },
-  { href: "/contact", label: "Contact" },
+  // Named for the job people actually come to it for: corrections to the
+  // catalogue are the most common reason to get in touch, and "Contact" alone
+  // gave no hint that this is where to report one.
+  { href: "/contact", label: "Corrections & Contact" },
 ];
 
 export default function SiteSidebar({

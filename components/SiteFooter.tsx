@@ -13,7 +13,7 @@ export default function SiteFooter() {
         </p>
         <p className="font-body text-sm">
           <Link href="/contact" className="text-link underline hover:text-rasta-red">
-            Contact
+            Corrections &amp; Contact
           </Link>
           <span className="text-ink-soft"> &middot; </span>
           <a
