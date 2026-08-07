@@ -10,12 +10,13 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { SITE_URL } from "@/lib/siteUrl";
 
+// Only the SVG masthead wordmark uses Cinzel now, and only at 700 — headings
+// moved to Oswald (see --font-display in globals.css). 400 and 800 were still
+// being preloaded on every page for nothing.
 const cinzel = Cinzel({
   variable: "--font-cinzel",
   subsets: ["latin"],
-  // 700 is kept for the SVG masthead wordmark (HeaderBanner); 800 is the
-  // weight the .font-display headings now render at (see globals.css).
-  weight: ["400", "700", "800"],
+  weight: ["700"],
 });
 
 // Loaded as a variable font (no fixed `weight` list) so the body copy can use
@@ -27,10 +28,12 @@ const garamond = EB_Garamond({
   subsets: ["latin"],
 });
 
+// The masthead tagline is the only Courier Prime on the site, at the default
+// 400 — the 700 face was preloaded and never rendered.
 const courierPrime = Courier_Prime({
   variable: "--font-courier-prime",
   subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: ["400"],
 });
 
 // Headings. A tall, condensed sans with a vintage poster / flyer feel.

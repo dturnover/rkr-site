@@ -38,6 +38,7 @@ export default function FacetBrowseIndex({
         {entries.map((e) => (
           <li key={e.value}>
             <Link
+              prefetch={false}
               href={`/browse/${facet.slug}/${encodeURIComponent(e.value)}`}
               className="inline-flex items-center gap-2 border border-paper-stain bg-paper px-3 py-1.5 font-catalog text-sm hover:bg-parchment-deep"
             >
@@ -85,6 +86,7 @@ export default function FacetBrowseIndex({
                 {items.map((e) => (
                   <li key={e.value} className="truncate mb-1 break-inside-avoid">
                     <Link
+                      prefetch={false}
                       href={`/browse/${facet.slug}/${encodeURIComponent(e.value)}`}
                       className="font-body hover:text-rasta-red"
                     >
@@ -112,6 +114,7 @@ export default function FacetBrowseIndex({
       <nav className="flex flex-wrap gap-1 mb-6 font-body text-sm" aria-label="Filter by first letter">
         {LETTERS.map((l) => (
           <Link
+            prefetch={false}
             key={l}
             href={`/browse/${facet.slug}?letter=${encodeURIComponent(l)}`}
             className={`w-7 h-7 flex items-center justify-center border ${
@@ -138,6 +141,7 @@ export default function FacetBrowseIndex({
             {entries.map((e) => (
               <li key={e.value} className="truncate mb-1 break-inside-avoid">
                 <Link
+                  prefetch={false}
                   href={`/browse/${facet.slug}/${encodeURIComponent(e.value)}`}
                   className="font-body hover:text-rasta-red"
                 >

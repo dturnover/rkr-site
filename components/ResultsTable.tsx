@@ -137,6 +137,7 @@ export default function ResultsTable({
                   >
                     {isSortable ? (
                       <Link
+                        prefetch={false}
                         href={sortLink(searchParams, col.key, sort, dir)}
                         className="text-ink hover:text-rasta-red"
                       >
@@ -201,6 +202,7 @@ export default function ResultsTable({
                         </span>
                       ) : href ? (
                         <Link
+                          prefetch={false}
                           href={href}
                           className={
                             col.link?.type === "record"

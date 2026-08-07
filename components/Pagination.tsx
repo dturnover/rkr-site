@@ -60,6 +60,7 @@ export default function Pagination({
       <div className="flex items-center gap-1">
         {effectivePage > 1 && (
           <Link
+            prefetch={false}
             href={withParam(searchParams, "page", String(effectivePage - 1))}
             className="px-2 py-1 border border-paper-stain hover:bg-paper"
           >
@@ -69,6 +70,7 @@ export default function Pagination({
         {showFirst && (
           <>
             <Link
+              prefetch={false}
               href={withParam(searchParams, "page", "1")}
               className="px-2 py-1 border border-paper-stain hover:bg-paper text-ink"
             >
@@ -79,6 +81,7 @@ export default function Pagination({
         )}
         {pageNumbers.map((p) => (
           <Link
+            prefetch={false}
             key={p}
             href={withParam(searchParams, "page", String(p))}
             className={`px-2 py-1 border ${
@@ -94,6 +97,7 @@ export default function Pagination({
           <>
             {showLastGap && <span className="px-1">&hellip;</span>}
             <Link
+              prefetch={false}
               href={withParam(searchParams, "page", String(totalPages))}
               className="px-2 py-1 border border-paper-stain hover:bg-paper text-ink"
             >
@@ -103,6 +107,7 @@ export default function Pagination({
         )}
         {effectivePage < totalPages && (
           <Link
+            prefetch={false}
             href={withParam(searchParams, "page", String(effectivePage + 1))}
             className="px-2 py-1 border border-paper-stain hover:bg-paper"
           >

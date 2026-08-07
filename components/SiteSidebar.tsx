@@ -49,6 +49,7 @@ export default function SiteSidebar({
           return (
             <li key={slug}>
               <Link
+                prefetch={false}
                 href={`/browse/${slug}`}
                 aria-current={active ? "page" : undefined}
                 className={`block underline decoration-paper-stain decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 hover:text-rasta-red ${
@@ -62,6 +63,7 @@ export default function SiteSidebar({
         })}
         <li className="lg:mt-2 lg:pt-2 lg:border-t lg:border-paper-stain">
           <Link
+            prefetch={false}
             href="/advanced-search"
             aria-current={pathname === "/advanced-search" ? "page" : undefined}
             className={`block underline decoration-paper-stain decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 font-semibold hover:text-rasta-red ${
@@ -78,6 +80,7 @@ export default function SiteSidebar({
             className={i === 0 ? "lg:mt-2 lg:pt-2 lg:border-t lg:border-paper-stain" : undefined}
           >
             <Link
+              prefetch={false}
               href={link.href}
               aria-current={pathname === link.href ? "page" : undefined}
               className={`block underline decoration-paper-stain decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 hover:text-rasta-red ${
@@ -95,6 +98,7 @@ export default function SiteSidebar({
             className={i === 0 ? "lg:mt-2 lg:pt-2 lg:border-t lg:border-paper-stain" : undefined}
           >
             <Link
+              prefetch={false}
               href={link.href}
               aria-current={pathname === link.href ? "page" : undefined}
               className={`block underline decoration-rasta-green decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 hover:text-rasta-red ${
