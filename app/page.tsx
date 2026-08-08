@@ -6,6 +6,7 @@ import HeaderSearchForm from "@/components/HeaderSearchForm";
 import GuideContent from "@/components/GuideContent";
 import StudioPhoto from "@/components/StudioPhoto";
 import { PROSE_CLASS } from "@/components/ProsePage";
+import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
 // The catalogue can change at any time via an admin CSV upload without a
 // redeploy, so this page (which has no cookies/searchParams to otherwise
@@ -24,11 +25,23 @@ export const dynamic = "force-dynamic";
 //   origins: "✎",
 // };
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<RawSearchParams>;
+}) {
   const status = await getDatabaseStatus();
+  // Where an editor lands after deleting a record — the record's own page is
+  // gone, so the confirmation has to be shown somewhere that still exists.
+  const deleted = first((await searchParams).deleted) === "1";
 
   return (
     <div className="space-y-10 max-w-4xl mx-auto">
+      {deleted && (
+        <div className="border-2 border-rasta-green text-rasta-green bg-paper px-4 py-2 font-body">
+          Record deleted. It won&rsquo;t come back on the next spreadsheet upload.
+        </div>
+      )}
       {/* Search is the whole point of the site, so it leads the page rather
           than sitting only in the header. The header's compact search hides
           itself on "/" (see HeaderSearchForm) so this isn't a duplicate.

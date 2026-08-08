@@ -106,6 +106,7 @@ export default async function RecordPage({
   const saved = first(sp.saved);
   const created = first(sp.created) === "1";
   const editError = first(sp.editError) === "1";
+  const deleteError = first(sp.deleteError);
 
   const session = await getSession();
   const isEditor = !!session;
@@ -137,6 +138,15 @@ export default async function RecordPage({
       {editError && (
         <div className="border-2 border-error text-error bg-paper px-4 py-2 font-body mb-4">
           Something went wrong saving those changes. Please try again.
+        </div>
+      )}
+      {deleteError && (
+        <div className="border-2 border-error text-error bg-paper px-4 py-2 font-body mb-4">
+          {deleteError === "confirm"
+            ? "Nothing was deleted — you need to tick the confirmation box first."
+            : deleteError === "missing"
+              ? "That record no longer exists, so there was nothing to delete."
+              : "Something went wrong deleting that record. Please try again."}
         </div>
       )}
 

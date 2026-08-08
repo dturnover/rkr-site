@@ -55,6 +55,17 @@ function ensureOverlayTables(): Promise<void> {
           created_at  TEXT NOT NULL,
           updated_at  TEXT NOT NULL
         );
+        -- Records an editor has removed. Deleting only from the records table
+        -- would be undone by the next catalogue upload, which rebuilds from the
+        -- compiler's spreadsheet, so a deletion is stored here as a tombstone
+        -- and the import skips any row whose key matches (streamTargetRows).
+        CREATE TABLE IF NOT EXISTS editor_deleted_records (
+          record_key   TEXT PRIMARY KEY,
+          record_label TEXT,
+          editor_id    INTEGER,
+          editor_name  TEXT,
+          deleted_at   TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS modification_log (
           id          INTEGER PRIMARY KEY AUTOINCREMENT,
           record_key  TEXT,
@@ -386,6 +397,7 @@ export async function getOverlayForMerge(): Promise<{
     has_base: boolean;
   }[];
   editorRecords: { record_key: string; data: Record<string, string | null> }[];
+  deletedKeys: string[];
 }> {
   await ensureOverlayTables();
   const client = await getClient();
@@ -393,7 +405,9 @@ export async function getOverlayForMerge(): Promise<{
     `SELECT record_key, field, value, base_value, has_base FROM editor_field_edits`
   );
   const er = await client.execute(`SELECT record_key, data FROM editor_records`);
+  const del = await client.execute(`SELECT record_key FROM editor_deleted_records`);
   return {
+    deletedKeys: del.rows.map((r) => String(r.record_key)),
     fieldEdits: fe.rows.map((r) => ({
       record_key: String(r.record_key),
       field: String(r.field),
@@ -444,6 +458,110 @@ export async function listFieldEdits(): Promise<FieldEditRow[]> {
     editor_name: r.editor_name == null ? null : String(r.editor_name),
     updated_at: String(r.updated_at),
   }));
+}
+
+export interface DeletedRecordRow {
+  record_key: string;
+  record_label: string | null;
+  editor_name: string | null;
+  deleted_at: string;
+}
+
+/** Removes a record from the live catalogue.
+ *
+ * A plain DELETE would be silently undone by the next catalogue upload, which
+ * rebuilds from the compiler's spreadsheet — so the removal is also recorded as
+ * a tombstone that the importer honours (see streamTargetRows). An
+ * editor-CREATED record has no spreadsheet row to come back from, so that case
+ * just drops its editor_records entry instead of leaving a tombstone behind.
+ * Any field overrides for the record are cleared too: they have nothing left to
+ * apply to, and would otherwise linger in the overrides list forever.
+ *
+ * Returns false when the id no longer resolves to a record. */
+export async function deleteRecord(recordId: number, editor: EditorInfo): Promise<boolean> {
+  await ensureOverlayTables();
+  const client = await getClient();
+
+  const cur = await client.execute({
+    sql: `SELECT ${EDITABLE_FIELDS.join(", ")} FROM records WHERE id = ? LIMIT 1`,
+    args: [recordId],
+  });
+  const current = cur.rows[0] as unknown as Record<EditableField, string | null> | undefined;
+  if (!current) return false;
+
+  const key = computeRecordKey(current);
+  const label =
+    [nullIfBlank(current.artist), nullIfBlank(current.title)].filter(Boolean).join(" – ") || null;
+  const isEditorRecord =
+    (await client.execute({ sql: `SELECT 1 FROM editor_records WHERE record_key = ? LIMIT 1`, args: [key] }))
+      .rows.length > 0;
+
+  const now = new Date().toISOString();
+  const statements: { sql: string; args: (string | number | null)[] }[] = [
+    { sql: `DELETE FROM records WHERE id = ?`, args: [recordId] },
+    { sql: `DELETE FROM records_fts WHERE rowid = ?`, args: [recordId] },
+    { sql: `DELETE FROM records_catalog_fts WHERE rowid = ?`, args: [recordId] },
+    { sql: `DELETE FROM editor_field_edits WHERE record_key = ?`, args: [key] },
+  ];
+
+  if (isEditorRecord) {
+    statements.push({ sql: `DELETE FROM editor_records WHERE record_key = ?`, args: [key] });
+  } else {
+    statements.push({
+      sql: `INSERT INTO editor_deleted_records (record_key, record_label, editor_id, editor_name, deleted_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(record_key) DO UPDATE SET
+              record_label = excluded.record_label, editor_id = excluded.editor_id,
+              editor_name = excluded.editor_name, deleted_at = excluded.deleted_at`,
+      args: [key, label, editorIdArg(editor.uid), editor.name, now],
+    });
+  }
+
+  statements.push({
+    sql: `INSERT INTO modification_log
+            (record_key, record_id, action, field, old_value, new_value, editor_id, editor_name, created_at)
+          VALUES (?, ?, 'deleted', NULL, ?, NULL, ?, ?, ?)`,
+    args: [key, recordId, label, editorIdArg(editor.uid), editor.name, now],
+  });
+
+  await client.batch(statements, "write");
+  return true;
+}
+
+/** Deleted base records, newest first — for the admin view. Editor-created
+ * records aren't listed: deleting one removes it outright, nothing to restore. */
+export async function listDeletedRecords(): Promise<DeletedRecordRow[]> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  const res = await client.execute(
+    `SELECT record_key, record_label, editor_name, deleted_at
+     FROM editor_deleted_records ORDER BY deleted_at DESC`
+  );
+  return res.rows.map((r) => ({
+    record_key: String(r.record_key),
+    record_label: r.record_label == null ? null : String(r.record_label),
+    editor_name: r.editor_name == null ? null : String(r.editor_name),
+    deleted_at: String(r.deleted_at),
+  }));
+}
+
+/** Lifts a tombstone. The row itself returns on the next catalogue upload,
+ * since that's what re-materialises the compiler's data. */
+export async function restoreDeletedRecord(recordKey: string, editor: EditorInfo): Promise<void> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  await client.batch(
+    [
+      { sql: `DELETE FROM editor_deleted_records WHERE record_key = ?`, args: [recordKey] },
+      {
+        sql: `INSERT INTO modification_log
+                (record_key, record_id, action, field, old_value, new_value, editor_id, editor_name, created_at)
+              VALUES (?, NULL, 'restored', NULL, NULL, NULL, ?, ?, ?)`,
+        args: [recordKey, editorIdArg(editor.uid), editor.name, new Date().toISOString()],
+      },
+    ],
+    "write"
+  );
 }
 
 /** Removes a field override: reverts the live record's field back to dad's

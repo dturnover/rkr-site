@@ -305,7 +305,11 @@ export async function* streamTargetRows(
   // doesn't contain are appended at the end; any the file now contains are
   // dropped (his version wins for whole new records). Records are matched by
   // computeRecordKey (matrix number, else label no + artist + title).
-  const { fieldEdits, editorRecords } = await getOverlayForMerge();
+  const { fieldEdits, editorRecords, deletedKeys } = await getOverlayForMerge();
+  // Records an editor deleted. The uploaded file still contains them (it's the
+  // compiler's own spreadsheet), so without this the next upload would quietly
+  // resurrect every deleted entry.
+  const deleted = new Set(deletedKeys);
   const editable = new Set<string>(EDITABLE_FIELDS);
   const fieldEditsByKey = new Map<
     string,
@@ -321,8 +325,13 @@ export async function* streamTargetRows(
   const editorRecordsByKey = new Map<string, Record<string, string | null>>();
   for (const er of editorRecords) editorRecordsByKey.set(er.record_key, er.data);
 
+  let skippedDeleted = 0;
   for await (const row of parseUploadRows(csvBuffer)) {
     const key = computeRecordKey(row);
+    if (deleted.has(key)) {
+      skippedDeleted++;
+      continue;
+    }
     const edits = fieldEditsByKey.get(key);
     if (edits) {
       for (const { field, value, base, hasBase } of edits) {
@@ -353,6 +362,9 @@ export async function* streamTargetRows(
   }
   if (editorAppended > 0) {
     onProgress?.(`Re-applied ${editorAppended.toLocaleString()} editor-added record(s).`);
+  }
+  if (skippedDeleted > 0) {
+    onProgress?.(`Kept ${skippedDeleted.toLocaleString()} editor-deleted record(s) out.`);
   }
 }
 

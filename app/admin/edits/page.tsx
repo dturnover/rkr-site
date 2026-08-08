@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
-import { listFieldEdits } from "@/lib/editor/overlay";
+import { listFieldEdits, listDeletedRecords } from "@/lib/editor/overlay";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
 export const metadata: Metadata = {
@@ -34,8 +34,10 @@ export default async function EditsPage({
   if (!session) redirect("/admin");
   if (session.role !== "admin") redirect("/admin"); // admin only
 
-  const removed = first((await searchParams).removed);
-  const edits = await listFieldEdits();
+  const sp = await searchParams;
+  const removed = first(sp.removed);
+  const restored = first(sp.restored) === "1";
+  const [edits, deleted] = await Promise.all([listFieldEdits(), listDeletedRecords()]);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -46,6 +48,11 @@ export default async function EditsPage({
         </Link>
       </div>
 
+      {restored && (
+        <Banner tone="warn">
+          Deletion undone. The record itself returns with the next spreadsheet upload.
+        </Banner>
+      )}
       {removed === "reverted" && <Banner tone="good">Override removed and the record reverted to the spreadsheet value.</Banner>}
       {removed === "pending" && (
         <Banner tone="warn">
@@ -107,6 +114,58 @@ export default async function EditsPage({
                         className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink whitespace-nowrap"
                       >
                         Remove
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h2 className="font-display text-2xl text-ink mt-12 mb-4">Deleted Records</h2>
+      <p className="font-body text-sm text-ink-soft mb-6">
+        Records an editor removed from the discography. Because each upload rebuilds the catalogue
+        from dad&rsquo;s spreadsheet, these are kept as a list of what to leave out &mdash; that is
+        what stops a deleted entry reappearing next week. Undoing a deletion drops it from that
+        list, and the record itself comes back with the next upload.
+      </p>
+
+      {deleted.length === 0 ? (
+        <section className="frame-double bg-paper p-6">
+          <p className="font-body text-ink">No records have been deleted.</p>
+        </section>
+      ) : (
+        <div className="overflow-x-auto border border-paper-stain">
+          <table className="w-full min-w-[560px] text-sm bg-paper">
+            <thead>
+              <tr className="bg-parchment-deep border-b-2 border-frame font-body text-ink">
+                <th className="text-left font-semibold px-3 py-2">Record</th>
+                <th className="text-left font-semibold px-3 py-2">Deleted</th>
+                <th className="text-left font-semibold px-3 py-2">By</th>
+                <th className="text-left font-semibold px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="font-body">
+              {deleted.map((d) => (
+                <tr key={d.record_key} className="border-b border-paper-stain/60 align-top">
+                  <td className="px-3 py-2 text-ink">
+                    {d.record_label || <span className="text-ink-soft text-xs">{d.record_key}</span>}
+                  </td>
+                  <td className="px-3 py-2 text-ink-soft text-xs">
+                    {new Date(d.deleted_at).toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2 text-ink-soft text-xs">{d.editor_name ?? dash}</td>
+                  <td className="px-3 py-2">
+                    <form action="/api/admin/edits" method="POST">
+                      <input type="hidden" name="action" value="restore" />
+                      <input type="hidden" name="record_key" value={d.record_key} />
+                      <button
+                        type="submit"
+                        className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink whitespace-nowrap"
+                      >
+                        Undo delete
                       </button>
                     </form>
                   </td>
