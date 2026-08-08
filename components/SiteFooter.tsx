@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import { FACEBOOK_GROUP_URL } from "@/lib/siteLinks";
 
 export default function SiteFooter() {
   return (
@@ -15,15 +14,6 @@ export default function SiteFooter() {
           <Link href="/contact" className="text-link underline hover:text-rasta-red">
             Corrections &amp; Contact
           </Link>
-          <span className="text-ink-soft"> &middot; </span>
-          <a
-            href={FACEBOOK_GROUP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-link underline hover:text-rasta-red"
-          >
-            Facebook group
-          </a>
           <span className="text-ink-soft"> &middot; </span>
           {/* Editors sign in here on a new device or after being signed out.
               /admin is noindex, so this link is the only way to find it. */}

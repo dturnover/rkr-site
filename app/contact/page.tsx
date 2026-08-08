@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { FACEBOOK_GROUP_URL } from "@/lib/siteLinks";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
 export const metadata: Metadata = {
@@ -105,14 +104,13 @@ export default async function ContactPage({
           identifying a pressing, chasing a rare label, or discussing the music itself, it&rsquo;s
           often the fastest place to get an answer.
         </p>
-        <a
-          href={FACEBOOK_GROUP_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block px-5 py-2 border border-frame text-ink font-body tracking-wide hover:bg-parchment-deep transition-colors"
-        >
-          Visit the Facebook group
-        </a>
+        {/* Deliberately NOT a link: the group is members-only, so a direct URL
+            just lands non-members on a permission wall. Telling people what to
+            search for works from any device and whatever Facebook does to its
+            group URLs. */}
+        <p className="font-body text-sm text-ink">
+          Search Facebook for the <strong>Roots Knotty Roots</strong> group and request to join.
+        </p>
       </section>
     </div>
   );
