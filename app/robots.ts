@@ -233,6 +233,22 @@ const AI_CRAWLERS = [
 // which is what actually keeps them out of search results if a URL leaks.
 const PRIVATE_PATHS = ["/admin", "/api/", "/mod-log", "/records/new"];
 
+// Crawlers that put the catalogue in front of people looking for it. Exempt
+// from the Crawl-delay applied to everything else — slowing these down only
+// slows down how much of the discography is findable. Prefix matching means
+// "Googlebot" also covers Googlebot-Image, Googlebot-News and the rest.
+const SEARCH_CRAWLERS = [
+  "Googlebot",
+  "Bingbot",
+  "DuckDuckBot",
+  "Applebot",
+  "YandexBot",
+  "Baiduspider",
+  "PetalBot",
+  "Bravebot",
+  "facebookexternalhit",
+];
+
 export default async function robots(): Promise<MetadataRoute.Robots> {
   // generateSitemaps() emits child sitemaps at /sitemap/0.xml, /sitemap/1.xml,
   // … and this Next version does NOT serve a combined /sitemap.xml index
@@ -253,10 +269,32 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       // crawler — may index the catalogue freely. A named group always wins
       // over "*" in the robots.txt spec, so the AI rules take precedence for
       // those agents.
+      // The search engines worth being in. Named explicitly so the
+      // Crawl-delay on "*" below can't apply to them: a named group wins
+      // outright in the robots.txt spec, and these are the crawlers whose
+      // speed we do NOT want to limit — every page they fetch is a page that
+      // becomes findable.
+      {
+        userAgent: SEARCH_CRAWLERS,
+        allow: "/",
+        disallow: PRIVATE_PATHS,
+      },
+      // Everything else: still allowed, but asked to space its requests out.
+      // This is aimed at the long tail of SEO tools, monitors and small
+      // crawlers that walk every URL in the sitemap back to back; one second
+      // apart is no obstacle to reading the site and takes the edge off a
+      // full 135k-page sweep.
+      //
+      // Worth being clear about what this is NOT: Crawl-delay is a request,
+      // it is ignored by Google entirely, and anything harvesting the
+      // catalogue on purpose will disregard it along with the rest of this
+      // file. Actual rate enforcement has to happen at the edge, before a
+      // request reaches the app (see the Vercel Firewall rule).
       {
         userAgent: "*",
         allow: "/",
         disallow: PRIVATE_PATHS,
+        crawlDelay: 1,
       },
       {
         userAgent: AI_CRAWLERS,
