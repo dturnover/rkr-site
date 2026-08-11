@@ -21,11 +21,17 @@ async function addColumnIfMissing(
   table: string,
   column: string,
   decl: string
-): Promise<void> {
+): Promise<boolean> {
   const client = await getClient();
   const info = await client.execute(`PRAGMA table_info(${table})`);
-  if (info.rows.some((r) => String((r as unknown as { name: string }).name) === column)) return;
+  // No rows at all means the table doesn't exist yet (PRAGMA doesn't error on
+  // a missing table). Nothing to migrate — whatever creates it will include
+  // the column. Relevant on a fresh database, where `records` only appears
+  // with the first catalogue upload.
+  if (info.rows.length === 0) return false;
+  if (info.rows.some((r) => String((r as unknown as { name: string }).name) === column)) return true;
   await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  return true;
 }
 
 function ensureOverlayTables(): Promise<void> {
@@ -88,6 +94,27 @@ function ensureOverlayTables(): Promise<void> {
       await addColumnIfMissing("editor_field_edits", "has_base", "INTEGER NOT NULL DEFAULT 0");
       await addColumnIfMissing("editor_field_edits", "record_label", "TEXT");
       await addColumnIfMissing("editor_field_edits", "record_id", "INTEGER");
+
+      // The compiler's review pass over the log: a tick for "I've checked this
+      // one", and a note back to the editor who made the change (so a query
+      // doesn't have to happen over email).
+      await addColumnIfMissing("modification_log", "reviewed_at", "TEXT");
+      await addColumnIfMissing("modification_log", "reviewed_by", "TEXT");
+      await addColumnIfMissing("modification_log", "note", "TEXT");
+      await addColumnIfMissing("modification_log", "note_at", "TEXT");
+      await addColumnIfMissing("modification_log", "note_by", "TEXT");
+
+      // `records` is rebuilt by the importer, which creates the column itself
+      // (lib/db/ddl.ts) — but a catalogue imported before that existed, or one
+      // brought back by restorePrevious from an older generation, won't have
+      // it. Added here so the log's record lookups always have a column to
+      // match on. Backfilling the values isn't possible from SQL (the key is
+      // derived in JS); the next upload fills them in.
+      if (await addColumnIfMissing("records", "record_key", "TEXT")) {
+        await client.execute(
+          `CREATE INDEX IF NOT EXISTS idx_records_record_key ON records(record_key)`
+        );
+      }
 
       // Backfill the "base" (dad's value when the edit was first made) for
       // existing edits from the earliest modification-log entry for that
@@ -363,20 +390,30 @@ export async function createRecord(
 }
 
 export interface LogEntry {
+  id: number;
   action: string;
   field: string | null;
   old_value: string | null;
   new_value: string | null;
   editor_name: string | null;
   created_at: string;
+  /** The compiler's note back to the editor about this change, if any. */
+  note: string | null;
+  note_by: string | null;
+  note_at: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
 }
+
+const LOG_COLUMNS =
+  "id, action, field, old_value, new_value, editor_name, created_at, note, note_by, note_at, reviewed_at, reviewed_by";
 
 /** The change history for one record (newest first), for the per-record log. */
 export async function getRecordLog(recordKey: string, limit = 50): Promise<LogEntry[]> {
   await ensureOverlayTables();
   const client = await getClient();
   const res = await client.execute({
-    sql: `SELECT action, field, old_value, new_value, editor_name, created_at
+    sql: `SELECT ${LOG_COLUMNS}
           FROM modification_log WHERE record_key = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
     args: [recordKey, limit],
   });
@@ -624,21 +661,182 @@ export async function removeFieldEdit(recordKey: string, field: string): Promise
 }
 
 export interface GlobalLogEntry extends LogEntry {
+  /** The record's id as it was when the change was made. Kept only as a
+   * fallback: see live_record_id. */
   record_id: number | null;
+  /** Where the record lives NOW. Ids don't survive editing — a full rebuild
+   * renumbers the whole catalogue, and the diff importer replaces a changed
+   * record with a fresh id — so the id stored alongside the log entry goes
+   * stale precisely for the records that have been worked on. Resolved
+   * through record_key, which is content-derived and does survive. */
+  live_record_id: number | null;
+}
+
+/** Which slice of the log to show. The compiler works through it in review
+ * passes, so "what haven't I checked yet" is the view that matters most. */
+export type LogFilter = "all" | "unreviewed" | "reviewed" | "noted";
+
+const LOG_FILTER_SQL: Record<LogFilter, string> = {
+  all: "",
+  unreviewed: "WHERE reviewed_at IS NULL",
+  reviewed: "WHERE reviewed_at IS NOT NULL",
+  noted: "WHERE note IS NOT NULL AND note <> ''",
+};
+
+export function parseLogFilter(value: string | undefined): LogFilter {
+  return value === "unreviewed" || value === "reviewed" || value === "noted" ? value : "all";
 }
 
 /** The global modification log (newest first), paginated. Defaults to the
  * site-wide PAGE_SIZE so the shared Pagination component (which derives the
  * page count from that same constant) stays in agreement. */
-export async function getGlobalLog(page: number, pageSize = PAGE_SIZE): Promise<{ entries: GlobalLogEntry[]; total: number }> {
+export async function getGlobalLog(
+  page: number,
+  filter: LogFilter = "all",
+  pageSize = PAGE_SIZE
+): Promise<{ entries: GlobalLogEntry[]; total: number; unreviewed: number }> {
   await ensureOverlayTables();
   const client = await getClient();
-  const totalRes = await client.execute(`SELECT COUNT(*) AS c FROM modification_log`);
-  const total = Number(totalRes.rows[0]?.c ?? 0);
+  const where = LOG_FILTER_SQL[filter];
+
+  const [totalRes, unreviewedRes] = await Promise.all([
+    client.execute(`SELECT COUNT(*) AS c FROM modification_log ${where}`),
+    client.execute(`SELECT COUNT(*) AS c FROM modification_log WHERE reviewed_at IS NULL`),
+  ]);
+
   const res = await client.execute({
-    sql: `SELECT record_id, action, field, old_value, new_value, editor_name, created_at
-          FROM modification_log ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+    sql: `SELECT ${LOG_COLUMNS}, record_id, record_key
+          FROM modification_log ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
     args: [pageSize, (page - 1) * pageSize],
   });
-  return { entries: res.rows as unknown as GlobalLogEntry[], total };
+  const rows = res.rows as unknown as (GlobalLogEntry & { record_key: string | null })[];
+  const live = await resolveLiveRecordIds(rows);
+  const entries = rows.map((r, i) => ({ ...r, live_record_id: live[i] }));
+
+  return {
+    entries,
+    total: Number(totalRes.rows[0]?.c ?? 0),
+    unreviewed: Number(unreviewedRes.rows[0]?.c ?? 0),
+  };
+}
+
+/** Finds where each log entry's record lives now, for one page of entries.
+ *
+ * Two lookups, because neither alone is sufficient. The record_key column on
+ * `records` is the reliable one, but it's only filled in by an import, so it's
+ * empty on a catalogue loaded before it existed. The record_id stored on the
+ * log entry covers that gap — but it's stale whenever the record has been
+ * edited since, so it can't be trusted blind: the candidate row is read back
+ * and its key recomputed, and it only counts if it still identifies the same
+ * record. Anything that fails both is genuinely unreachable (deleted, or
+ * renamed in a way that changed its key) and resolves to null rather than to a
+ * confidently wrong link. */
+async function resolveLiveRecordIds(
+  rows: { record_key: string | null; record_id: number | null }[]
+): Promise<(number | null)[]> {
+  const client = await getClient();
+  const out: (number | null)[] = rows.map(() => null);
+
+  const keys = [...new Set(rows.map((r) => r.record_key).filter((k): k is string => !!k))];
+  const byKey = new Map<string, number>();
+  if (keys.length > 0) {
+    const res = await client.execute({
+      sql: `SELECT id, record_key FROM records WHERE record_key IN (${keys.map(() => "?").join(", ")})`,
+      args: keys,
+    });
+    for (const r of res.rows) {
+      const rr = r as unknown as { id: number; record_key: string };
+      if (!byKey.has(rr.record_key)) byKey.set(rr.record_key, Number(rr.id));
+    }
+  }
+
+  const unresolved: number[] = [];
+  rows.forEach((r, i) => {
+    const hit = r.record_key ? byKey.get(r.record_key) : undefined;
+    if (hit != null) out[i] = hit;
+    else if (r.record_id != null) unresolved.push(i);
+  });
+
+  if (unresolved.length > 0) {
+    const ids = [...new Set(unresolved.map((i) => rows[i].record_id as number))];
+    const res = await client.execute({
+      sql: `SELECT id, matrix_number, label_number, artist, title
+            FROM records WHERE id IN (${ids.map(() => "?").join(", ")})`,
+      args: ids,
+    });
+    const keyById = new Map<number, string>();
+    for (const r of res.rows) {
+      const rr = r as unknown as {
+        id: number;
+        matrix_number: string | null;
+        label_number: string | null;
+        artist: string | null;
+        title: string | null;
+      };
+      keyById.set(Number(rr.id), computeRecordKey(rr));
+    }
+    for (const i of unresolved) {
+      const id = rows[i].record_id as number;
+      // Only accept the stored id if the row still there is the same record.
+      if (keyById.get(id) === rows[i].record_key) out[i] = id;
+    }
+  }
+
+  return out;
+}
+
+/** Ticks (or un-ticks) a log entry as reviewed by the compiler. */
+export async function setLogReviewed(
+  logId: number,
+  reviewed: boolean,
+  reviewerName: string
+): Promise<void> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  await client.execute({
+    sql: `UPDATE modification_log SET reviewed_at = ?, reviewed_by = ? WHERE id = ?`,
+    args: reviewed ? [new Date().toISOString(), reviewerName, logId] : [null, null, logId],
+  });
+}
+
+/** Leaves (or clears) a note on a log entry. The editor who made the change
+ * sees it on the record's own page, so a query doesn't need an email. */
+export async function setLogNote(
+  logId: number,
+  note: string,
+  authorName: string
+): Promise<void> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  const trimmed = note.trim().slice(0, 2000);
+  await client.execute({
+    sql: `UPDATE modification_log SET note = ?, note_by = ?, note_at = ? WHERE id = ?`,
+    args: trimmed
+      ? [trimmed, authorName, new Date().toISOString(), logId]
+      : [null, null, null, logId],
+  });
+}
+
+/** How many changes the compiler still has to look at — drives the pointer on
+ * the admin page so a review pass can be picked up where it left off. */
+export async function countUnreviewedLog(): Promise<number> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  const res = await client.execute(
+    `SELECT COUNT(*) AS c FROM modification_log WHERE reviewed_at IS NULL`
+  );
+  return Number(res.rows[0]?.c ?? 0);
+}
+
+/** Notes left on this editor's own changes — drives the "the compiler left you
+ * a note" pointer they see when they sign in. */
+export async function countNotesForEditor(editorName: string): Promise<number> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  const res = await client.execute({
+    sql: `SELECT COUNT(*) AS c FROM modification_log
+          WHERE note IS NOT NULL AND note <> '' AND editor_name = ?`,
+    args: [editorName],
+  });
+  return Number(res.rows[0]?.c ?? 0);
 }

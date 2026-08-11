@@ -41,12 +41,43 @@ export default function EditorPanel({
   const values: Partial<Record<string, string | null>> = {};
   for (const f of EDITABLE_FIELDS) values[f] = record[f as keyof RecordDetail] as string | null;
 
+  // Notes the compiler left on this record's changes while reviewing the
+  // Modification Log — surfaced at the top, since the whole point is that the
+  // editor sees them without being emailed.
+  const notes = log.filter((e) => !!e.note);
+
   return (
     <section className="frame-double bg-parchment/40 p-5 sm:p-7">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-display text-lg text-ink">Editor Tools</h3>
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <h3 className="font-display text-lg text-ink">
+          Editor Tools
+          {/* The number the Modification Log links by, shown so it can be
+              matched up against the row that was clicked. Editors only — it's
+              a row id, not a permanent catalogue number. */}
+          <span className="font-body text-sm text-ink-soft ml-2">record #{record.id}</span>
+        </h3>
         <span className="font-body text-xs text-ink-soft">signed in as {editorName}</span>
       </div>
+
+      {notes.length > 0 && (
+        <div className="border-2 border-rasta-gold bg-paper p-4 mb-4">
+          <h4 className="font-body text-xs uppercase tracking-wide text-ink-soft mb-2">
+            {notes.length === 1 ? "A note about this record" : "Notes about this record"}
+          </h4>
+          <ul className="space-y-3 font-body text-sm">
+            {notes.map((n) => (
+              <li key={n.id}>
+                <p className="text-ink">{n.note}</p>
+                <p className="text-ink-soft text-xs mt-0.5">
+                  {n.note_by ?? "the compiler"}
+                  {n.note_at ? `, ${formatWhen(n.note_at)}` : ""} &mdash; on &ldquo;{logLine(n)}
+                  &rdquo;
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <details className="mb-4">
         <summary className="cursor-pointer font-body text-link hover:text-rasta-red select-none">
@@ -111,11 +142,23 @@ export default function EditorPanel({
           <p className="font-body text-sm text-ink-soft italic">No changes recorded yet.</p>
         ) : (
           <ul className="space-y-1.5 font-body text-sm">
-            {log.map((e, i) => (
-              <li key={i} className="break-words">
+            {log.map((e) => (
+              <li key={e.id} className="break-words">
                 <span className="text-ink-soft">{formatWhen(e.created_at)}</span>{" "}
                 <span className="text-ink">— {logLine(e)}</span>{" "}
                 {e.editor_name && <span className="text-ink-soft">({e.editor_name})</span>}
+                {e.reviewed_at && (
+                  <span className="text-rasta-green" title={`Reviewed by ${e.reviewed_by ?? "the compiler"}`}>
+                    {" "}
+                    ✓
+                  </span>
+                )}
+                {e.note && (
+                  <p className="border-l-2 border-rasta-gold pl-2 mt-1 text-ink">
+                    {e.note}
+                    <span className="text-ink-soft text-xs"> — {e.note_by ?? "the compiler"}</span>
+                  </p>
+                )}
               </li>
             ))}
           </ul>

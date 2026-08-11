@@ -371,10 +371,18 @@ export async function* streamTargetRows(
 // The full ordered column list a records row is written with (the 24 catalogue
 // fields + year_sort + the 8 _norm columns), and a matching values builder.
 // Shared with the diff importer so an inserted row is byte-identical either way.
-export const RECORD_INSERT_COLUMNS = [...INSERT_COLUMNS, "year_sort", ...NORM_COLUMNS];
+export const RECORD_INSERT_COLUMNS = [
+  ...INSERT_COLUMNS,
+  "year_sort",
+  ...NORM_COLUMNS,
+  "record_key",
+];
 export function recordInsertValues(byField: FieldRow): (string | number | null)[] {
   const { values, yearSort, norms } = insertPartsFor(byField);
-  return [...values, yearSort, ...norms];
+  // Stored so the overlay tables (whose only durable handle on a record is this
+  // key) can be joined back to the live row — see the record_key note in
+  // lib/db/ddl.ts.
+  return [...values, yearSort, ...norms, computeRecordKey(byField)];
 }
 
 /** A stable fingerprint of a record's 24 catalogue fields. Both the live
@@ -399,7 +407,9 @@ export async function buildStagingTables(
     ${buildTableDdl(STAGING_TABLE)}
   `);
 
-  const allColumns = [...INSERT_COLUMNS, "year_sort", ...NORM_COLUMNS];
+  // The same column list (and, below, the same values builder) the diff
+  // importer writes, so a row is byte-identical whichever path created it.
+  const allColumns = RECORD_INSERT_COLUMNS;
   const rowPlaceholder = `(?, ${allColumns.map(() => "?").join(", ")})`;
   const insertSql = (n: number) =>
     `INSERT INTO ${STAGING_TABLE} (id, ${allColumns.join(", ")}) VALUES ${Array(n)
@@ -435,8 +445,7 @@ export async function buildStagingTables(
   };
   const addRow = async (byField: FieldRow) => {
     id++;
-    const { values, yearSort, norms } = insertPartsFor(byField);
-    chunkArgs.push(id, ...values, yearSort, ...norms);
+    chunkArgs.push(id, ...recordInsertValues(byField));
     chunkCount++;
     if (chunkCount >= CHUNK_SIZE) {
       sealChunk();

@@ -121,7 +121,15 @@ CREATE TABLE ${tableName} (
   country_norm  TEXT,
   origin_norm   TEXT,
   genre_norm    TEXT,
-  format_norm   TEXT
+  format_norm   TEXT,
+  -- The content-derived identity from lib/editor/overlay.ts (matrix number,
+  -- else label no + artist + title), stored so the overlay tables can be
+  -- joined back to the live row. Row ids are NOT stable — a full rebuild
+  -- renumbers everything, and the diff importer gives a changed record a new
+  -- id — so a modification-log entry's stored record_id goes stale exactly
+  -- when the record gets edited. Matching on this instead keeps those links
+  -- pointing at the right record.
+  record_key    TEXT
 );
 
 CREATE VIRTUAL TABLE ${fts} USING fts5(title, title_credit, artist, artist_credit, notes);
@@ -168,6 +176,7 @@ export function buildIndexStatements(tableName: string): string[] {
     "year_sort",
     "matrix_number",
     "label_number",
+    "record_key",
   ];
   return cols.map((c) => `CREATE INDEX ${idx(c)} ON ${tableName}(${c})`);
 }

@@ -5,6 +5,7 @@ import { listUsers } from "@/lib/auth/users";
 import { listPendingInvites } from "@/lib/auth/invites";
 import { inviteUrl, isEmailConfigured } from "@/lib/email/send";
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
+import { countNotesForEditor, countUnreviewedLog } from "@/lib/editor/overlay";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import BlobUploadForm from "@/components/BlobUploadForm";
 import CopyLink from "@/components/CopyLink";
@@ -87,6 +88,7 @@ export default async function AdminPage({
 
   // ---- Signed in as an editor: simple landing (no admin tools) ----
   if (!isAdmin) {
+    const myNotes = await countNotesForEditor(session.name);
     return (
       <div className="max-w-xl mx-auto">
         <div className="flex items-center justify-between mb-4">
@@ -97,11 +99,31 @@ export default async function AdminPage({
             </button>
           </form>
         </div>
+
+        {/* Notes are left against a single change, which an editor would
+            otherwise only find by revisiting that exact record — so the count
+            is surfaced here, on the page they land on. */}
+        {myNotes > 0 && (
+          <Banner tone="warn">
+            Michael has left {myNotes === 1 ? "a note" : `${myNotes} notes`} on your changes.{" "}
+            <Link href="/mod-log?filter=noted" className="text-link underline hover:text-rasta-red">
+              Read {myNotes === 1 ? "it" : "them"}
+            </Link>
+            .
+          </Banner>
+        )}
+
         <section className="frame-double bg-paper p-6">
           <p className="font-body text-ink">
             You&rsquo;re signed in as <strong>{session.name}</strong> (editor). Open any track&rsquo;s
             page and use the <em>Editor tools</em> panel to correct fields or add a new record. Your
             changes are attributed to you and preserved across the admin&rsquo;s catalogue updates.
+          </p>
+          <p className="font-body text-sm text-ink-soft mt-3">
+            <Link href="/mod-log" className="text-link underline hover:text-rasta-red">
+              Modification log
+            </Link>{" "}
+            &mdash; every change across the catalogue, including any notes left on yours.
           </p>
         </section>
       </div>
@@ -114,6 +136,7 @@ export default async function AdminPage({
   const pendingInvites = await listPendingInvites();
   const useBlobUpload = !!process.env.BLOB_READ_WRITE_TOKEN;
   const emailReady = isEmailConfigured();
+  const unreviewedCount = await countUnreviewedLog();
 
   return (
     <div className="max-w-xl mx-auto">
@@ -210,7 +233,20 @@ export default async function AdminPage({
           <Link href="/mod-log" className="text-link underline hover:text-rasta-red">
             View the modification log
           </Link>
-          <span className="text-ink-soft"> &mdash; every change across the catalogue.</span>
+          <span className="text-ink-soft">
+            {" "}
+            &mdash; every change across the catalogue
+            {unreviewedCount > 0 ? ", " : "."}
+          </span>
+          {unreviewedCount > 0 && (
+            <Link
+              href="/mod-log?filter=unreviewed"
+              className="text-rasta-red underline hover:text-ink"
+            >
+              {unreviewedCount.toLocaleString()} not yet reviewed
+            </Link>
+          )}
+          {unreviewedCount > 0 && <span className="text-ink-soft">.</span>}
         </p>
         <p className="font-body text-sm mt-2">
           <Link href="/admin/history" className="text-link underline hover:text-rasta-red">
