@@ -48,8 +48,12 @@ export default function SiteSidebar({
           const active = pathname === `/browse/${slug}` || pathname.startsWith(`/browse/${slug}/`);
           return (
             <li key={slug}>
+              {/* Prefetched: nine links, on every page, and the primary way
+                  people move around the site. Prefetching is off on the big
+                  link lists (browse values, search results) where it would
+                  mean hundreds of requests per page — here it's the whole
+                  difference between a click feeling instant and feeling slow. */}
               <Link
-                prefetch={false}
                 href={`/browse/${slug}`}
                 aria-current={active ? "page" : undefined}
                 className={`block underline decoration-paper-stain decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 hover:text-rasta-red ${
@@ -63,7 +67,6 @@ export default function SiteSidebar({
         })}
         <li className="lg:mt-2 lg:pt-2 lg:border-t lg:border-paper-stain">
           <Link
-            prefetch={false}
             href="/advanced-search"
             aria-current={pathname === "/advanced-search" ? "page" : undefined}
             className={`block underline decoration-paper-stain decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 font-semibold hover:text-rasta-red ${

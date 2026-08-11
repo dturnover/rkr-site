@@ -112,9 +112,13 @@ export default function FacetBrowseIndex({
   return (
     <div>
       <nav className="flex flex-wrap gap-1 mb-6 font-body text-sm" aria-label="Filter by first letter">
+        {/* These are left to prefetch, unlike the value links below: 26 letter
+            tabs is a bounded, cheap set, and stepping through them is the main
+            way anyone browses — so this is exactly where preloading pays for
+            itself. The value links are hundreds per page, which is what made
+            blanket prefetching expensive in the first place. */}
         {LETTERS.map((l) => (
           <Link
-            prefetch={false}
             key={l}
             href={`/browse/${facet.slug}?letter=${encodeURIComponent(l)}`}
             className={`w-7 h-7 flex items-center justify-center border ${
