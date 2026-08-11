@@ -207,6 +207,29 @@ export async function setPasswordByEmail(
   };
 }
 
+/** Changes an account's display name. Only affects what future changes are
+ * attributed to — the history keeps whatever name was current when each entry
+ * was written, so callers that want it rewritten too should also call
+ * renameEditor (lib/editor/overlay.ts). Returns the previous name, which is
+ * what that rewrite has to match on. */
+export async function setUserDisplayName(id: number, name: string): Promise<string | null> {
+  await ensureUsersTable();
+  const client = await getClient();
+  const trimmed = name.trim().slice(0, 120);
+  if (!trimmed) return null;
+  const cur = await client.execute({
+    sql: `SELECT display_name FROM users WHERE id = ? LIMIT 1`,
+    args: [id],
+  });
+  const previous = cur.rows[0] ? String(cur.rows[0].display_name) : null;
+  if (previous === null) return null;
+  await client.execute({
+    sql: `UPDATE users SET display_name = ? WHERE id = ?`,
+    args: [trimmed, id],
+  });
+  return previous;
+}
+
 export async function setUserActive(id: number, active: boolean): Promise<void> {
   await ensureUsersTable();
   const client = await getClient();

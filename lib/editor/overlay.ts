@@ -890,6 +890,57 @@ export async function countUnreviewedLog(): Promise<number> {
   return Number(res.rows[0]?.c ?? 0);
 }
 
+/** Every display name that appears anywhere in the history, for the rename
+ * tool's picker. Includes names attached to notes and review ticks, not just
+ * to changes. */
+export async function listEditorNames(): Promise<{ name: string; changes: number }[]> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  const res = await client.execute(`
+    SELECT name, SUM(n) AS n FROM (
+      SELECT editor_name AS name, COUNT(*) AS n FROM modification_log
+        WHERE editor_name IS NOT NULL AND editor_name <> '' GROUP BY editor_name
+      UNION ALL
+      SELECT note_by AS name, 0 AS n FROM modification_log
+        WHERE note_by IS NOT NULL AND note_by <> '' GROUP BY note_by
+      UNION ALL
+      SELECT reviewed_by AS name, 0 AS n FROM modification_log
+        WHERE reviewed_by IS NOT NULL AND reviewed_by <> '' GROUP BY reviewed_by
+    ) GROUP BY name ORDER BY n DESC, name
+  `);
+  return res.rows.map((r) => ({ name: String(r.name), changes: Number(r.n ?? 0) }));
+}
+
+/** Rewrites a display name everywhere it appears in the history.
+ *
+ * Matched on the name itself rather than on editor_id, because the bootstrap
+ * admin (authenticated by ADMIN_PASSWORD rather than a users row) has no id to
+ * match on — and that account is exactly the one that ends up labelled with
+ * whatever was typed into the email box at sign-in. Returns rows rewritten. */
+export async function renameEditor(oldName: string, newName: string): Promise<number> {
+  await ensureOverlayTables();
+  const client = await getClient();
+  const from = oldName.trim();
+  const to = newName.trim().slice(0, 120);
+  if (!from || !to || from === to) return 0;
+
+  const targets: [string, string][] = [
+    ["modification_log", "editor_name"],
+    ["modification_log", "note_by"],
+    ["modification_log", "reviewed_by"],
+    ["editor_field_edits", "editor_name"],
+    ["editor_deleted_records", "editor_name"],
+  ];
+  const results = await client.batch(
+    targets.map(([table, column]) => ({
+      sql: `UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`,
+      args: [to, from],
+    })),
+    "write"
+  );
+  return results.reduce((sum, r) => sum + Number(r.rowsAffected ?? 0), 0);
+}
+
 /** Notes left on this editor's own changes — drives the "the compiler left you
  * a note" pointer they see when they sign in. */
 export async function countNotesForEditor(editorName: string): Promise<number> {

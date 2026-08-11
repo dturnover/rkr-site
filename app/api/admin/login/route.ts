@@ -44,7 +44,15 @@ export async function POST(request: NextRequest) {
     }
   }
   if (!session && checkAdminPassword(password)) {
-    session = { uid: "env-admin", role: "admin", name: email || "Admin" };
+    // The bootstrap admin has no users row to carry a display name, so without
+    // ADMIN_DISPLAY_NAME every change it makes is attributed to whatever was
+    // typed into the email box — which is how the modification log ends up
+    // crediting an email address instead of a person.
+    session = {
+      uid: "env-admin",
+      role: "admin",
+      name: process.env.ADMIN_DISPLAY_NAME?.trim() || email || "Admin",
+    };
   }
 
   if (!session) {

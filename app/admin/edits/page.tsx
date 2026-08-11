@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
-import { listFieldEdits, listDeletedRecords } from "@/lib/editor/overlay";
+import { listFieldEdits, listDeletedRecords, listEditorNames } from "@/lib/editor/overlay";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
 export const metadata: Metadata = {
@@ -37,7 +37,13 @@ export default async function EditsPage({
   const sp = await searchParams;
   const removed = first(sp.removed);
   const restored = first(sp.restored) === "1";
-  const [edits, deleted] = await Promise.all([listFieldEdits(), listDeletedRecords()]);
+  const renamed = first(sp.renamed);
+  const renamedAccount = first(sp.account) === "1";
+  const [edits, deleted, editorNames] = await Promise.all([
+    listFieldEdits(),
+    listDeletedRecords(),
+    listEditorNames(),
+  ]);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -48,6 +54,15 @@ export default async function EditsPage({
         </Link>
       </div>
 
+      {renamed === "invalid" && (
+        <Banner tone="warn">Pick a name to change and type the name it should read instead.</Banner>
+      )}
+      {renamed != null && renamed !== "invalid" && (
+        <Banner tone="good">
+          Renamed across {renamed} history {Number(renamed) === 1 ? "entry" : "entries"}
+          {renamedAccount ? ", and on the editor's account so future changes match" : ""}.
+        </Banner>
+      )}
       {restored && (
         <Banner tone="warn">
           Deletion undone. The record itself returns with the next spreadsheet upload.
@@ -122,6 +137,68 @@ export default async function EditsPage({
             </tbody>
           </table>
         </div>
+      )}
+
+      <h2 className="font-display text-2xl text-ink mt-12 mb-4">Editor Names</h2>
+      <p className="font-body text-sm text-ink-soft mb-4">
+        Changes are credited to whatever name the editor was signed in under at the time, so a
+        name that was wrong (an email address, a misspelling) stays wrong in the history. Renaming
+        here rewrites it everywhere &mdash; every change, note and review tick &mdash; and updates
+        the editor&rsquo;s account so their future changes match.
+      </p>
+
+      {editorNames.length === 0 ? (
+        <section className="frame-double bg-paper p-6">
+          <p className="font-body text-ink">No changes have been recorded yet.</p>
+        </section>
+      ) : (
+        <section className="frame-double bg-paper p-6">
+          <form action="/api/admin/edits" method="POST" className="flex flex-col gap-3">
+            <input type="hidden" name="action" value="rename-editor" />
+            <label className="flex flex-col gap-1">
+              <span className="font-body text-xs uppercase tracking-wide text-ink-soft">
+                Currently credited as
+              </span>
+              <select
+                name="old_name"
+                required
+                className="border border-paper-stain bg-paper px-2 py-1.5 font-body text-ink focus:outline-none focus:border-rasta-red"
+              >
+                {editorNames.map((e) => (
+                  <option key={e.name} value={e.name}>
+                    {e.name}
+                    {e.changes > 0 ? ` (${e.changes.toLocaleString()} changes)` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="font-body text-xs uppercase tracking-wide text-ink-soft">
+                Should read
+              </span>
+              <input
+                type="text"
+                name="new_name"
+                required
+                maxLength={120}
+                placeholder="Michael Turner"
+                className="border border-paper-stain bg-paper px-2 py-1.5 font-body text-ink focus:outline-none focus:border-rasta-red"
+              />
+            </label>
+            <button
+              type="submit"
+              className="self-start px-4 py-2 bg-frame text-paper font-body text-sm tracking-wide hover:bg-rasta-red transition-colors"
+            >
+              Rename Everywhere
+            </button>
+          </form>
+          <p className="font-body text-xs text-ink-soft mt-4">
+            The admin account signed in with the site password has no name of its own, so it&rsquo;s
+            credited with whatever was typed into the email box. Set{" "}
+            <code className="font-mono">ADMIN_DISPLAY_NAME</code> in the Vercel environment
+            variables to fix that for future sign-ins.
+          </p>
+        </section>
       )}
 
       <h2 className="font-display text-2xl text-ink mt-12 mb-4">Deleted Records</h2>

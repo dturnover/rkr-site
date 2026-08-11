@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
-import { removeFieldEdit, restoreDeletedRecord } from "@/lib/editor/overlay";
+import { removeFieldEdit, renameEditor, restoreDeletedRecord } from "@/lib/editor/overlay";
+import { listUsers, setUserDisplayName } from "@/lib/auth/users";
 import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
 // Admin-only management of the editor overlay: removing a field override
@@ -16,6 +17,28 @@ export async function POST(request: NextRequest) {
 
   const form = await request.formData();
   const action = String(form.get("action") ?? "");
+
+  // Rewrites a display name across the whole history. Matched by name rather
+  // than by account, so it also covers the bootstrap admin (which has no users
+  // row) and editors whose account has since been removed.
+  if (action === "rename-editor") {
+    const oldName = String(form.get("old_name") ?? "").trim();
+    const newName = String(form.get("new_name") ?? "").trim();
+    if (!oldName || !newName || oldName === newName) {
+      return NextResponse.redirect(new URL(`/admin/edits?renamed=invalid`, request.url));
+    }
+
+    const rows = await renameEditor(oldName, newName);
+
+    // If a real account carries the old name, rename it too — otherwise its
+    // next change re-introduces the name that was just cleaned up.
+    const match = (await listUsers()).find((u) => u.display_name === oldName);
+    if (match) await setUserDisplayName(match.id, newName);
+
+    return NextResponse.redirect(
+      new URL(`/admin/edits?renamed=${rows}&account=${match ? "1" : "0"}`, request.url)
+    );
+  }
 
   if (action === "restore") {
     const recordKey = String(form.get("record_key") ?? "");
