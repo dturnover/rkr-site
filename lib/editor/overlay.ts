@@ -17,6 +17,19 @@ import { PAGE_SIZE } from "@/lib/queries/shared";
 
 let ensured: Promise<void> | null = null;
 
+/** SQL mirror of normKey() below, for the one-off backfill of record_key on a
+ * catalogue imported before that column existed. Lower-cases, turns tabs and
+ * newlines into spaces, collapses runs of spaces, and trims. The nested
+ * replaces collapse runs of up to 16 spaces, well past anything the catalogue
+ * actually contains; a row whose value somehow exceeds that just keeps a key
+ * the next upload will correct, since the importer recomputes it properly. */
+function sqlNormKey(column: string): string {
+  let expr = `lower(coalesce(${column}, ''))`;
+  for (const ch of ["char(9)", "char(10)", "char(13)"]) expr = `replace(${expr}, ${ch}, ' ')`;
+  for (let i = 0; i < 4; i++) expr = `replace(${expr}, '  ', ' ')`;
+  return `trim(${expr})`;
+}
+
 async function addColumnIfMissing(
   table: string,
   column: string,
@@ -32,6 +45,32 @@ async function addColumnIfMissing(
   if (info.rows.some((r) => String((r as unknown as { name: string }).name) === column)) return true;
   await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
   return true;
+}
+
+/** Fills in record_key for a catalogue imported before that column existed.
+ * Only an import writes the column, so without this every record loaded
+ * earlier has no key until the next upload — and the modification log can't
+ * link to any of them in the meantime. Returns how many rows were filled.
+ *
+ * Deliberately one server-side UPDATE rather than reading 135k rows out to
+ * compute keys in JavaScript and writing them back. Guarded by an
+ * index-backed existence check, so it costs nothing once it has run. */
+export async function backfillRecordKeys(): Promise<number> {
+  const client = await getClient();
+  const pending = await client.execute(`SELECT 1 FROM records WHERE record_key IS NULL LIMIT 1`);
+  if (pending.rows.length === 0) return 0;
+
+  const res = await client.execute(`
+    UPDATE records SET record_key = CASE
+      WHEN ${sqlNormKey("matrix_number")} <> ''
+        THEN 'mx:' || ${sqlNormKey("matrix_number")}
+      ELSE 'lk:' || ${sqlNormKey("label_number")}
+                || '|' || ${sqlNormKey("artist")}
+                || '|' || ${sqlNormKey("title")}
+    END
+    WHERE record_key IS NULL
+  `);
+  return Number(res.rowsAffected ?? 0);
 }
 
 function ensureOverlayTables(): Promise<void> {
@@ -114,6 +153,7 @@ function ensureOverlayTables(): Promise<void> {
         await client.execute(
           `CREATE INDEX IF NOT EXISTS idx_records_record_key ON records(record_key)`
         );
+        await backfillRecordKeys();
       }
 
       // Backfill the "base" (dad's value when the edit was first made) for
@@ -316,6 +356,17 @@ export async function applyFieldEdits(
     });
   }
 
+  // Pin the row to the key the overlay filed this edit under. Two reasons:
+  // it heals a row whose key predates the column (nothing can backfill an
+  // editor-created record otherwise), and editing artist/title/matrix/label
+  // number changes what computeRecordKey would return for the row — but the
+  // overlay still tracks it under the compiler's original key, so that is the
+  // key the row has to keep for the modification log to find it.
+  statements.push({
+    sql: `UPDATE records SET record_key = ? WHERE id = ?`,
+    args: [key, recordId],
+  });
+
   statements.push(...ftsRefreshStatements(recordId));
 
   // If this is an editor-added record, refresh its stored full state so the
@@ -358,6 +409,10 @@ export async function createRecord(
   // Derived columns.
   cols.push("year_sort");
   vals.push(deriveYearSort(fields.year));
+  // Without this the row has no key, so nothing in the modification log can
+  // find it and the log shows no record link for anything an editor added.
+  cols.push("record_key");
+  vals.push(key);
   for (const [src, norm] of Object.entries(NORM_MAP)) {
     cols.push(norm as string);
     vals.push(fields[src] ? (fields[src] as string).toLowerCase() : null);
@@ -740,13 +795,20 @@ async function resolveLiveRecordIds(
   const keys = [...new Set(rows.map((r) => r.record_key).filter((k): k is string => !!k))];
   const byKey = new Map<string, number>();
   if (keys.length > 0) {
-    const res = await client.execute({
-      sql: `SELECT id, record_key FROM records WHERE record_key IN (${keys.map(() => "?").join(", ")})`,
-      args: keys,
-    });
-    for (const r of res.rows) {
-      const rr = r as unknown as { id: number; record_key: string };
-      if (!byKey.has(rr.record_key)) byKey.set(rr.record_key, Number(rr.id));
+    try {
+      const res = await client.execute({
+        sql: `SELECT id, record_key FROM records WHERE record_key IN (${keys.map(() => "?").join(", ")})`,
+        args: keys,
+      });
+      for (const r of res.rows) {
+        const rr = r as unknown as { id: number; record_key: string };
+        if (!byKey.has(rr.record_key)) byKey.set(rr.record_key, Number(rr.id));
+      }
+    } catch {
+      // The column is missing — a catalogue restored from a generation built
+      // before it existed, until the next cold start migrates it back in.
+      // The verified-id pass below still resolves most entries, so the log
+      // stays usable rather than erroring out.
     }
   }
 

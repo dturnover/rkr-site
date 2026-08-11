@@ -348,15 +348,17 @@ export async function* streamTargetRows(
     }
     // Dad's file contains this record → his version wins; drop the editor copy.
     if (editorRecordsByKey.size > 0) editorRecordsByKey.delete(key);
+    row[RECORD_KEY_FIELD] = key;
     yield row;
   }
 
   // Append editor-added records not present in dad's file.
   let editorAppended = 0;
-  for (const data of editorRecordsByKey.values()) {
+  for (const [key, data] of editorRecordsByKey) {
     const row: FieldRow = {};
     for (const f of CSV_FIELDS) row[f] = null;
     for (const f of EDITABLE_FIELDS) row[f] = nullIfBlank(data[f] ?? null);
+    row[RECORD_KEY_FIELD] = key;
     editorAppended++;
     yield row;
   }
@@ -377,12 +379,20 @@ export const RECORD_INSERT_COLUMNS = [
   ...NORM_COLUMNS,
   "record_key",
 ];
+
+/** Where streamTargetRows stashes the overlay's key for a row. Not one of the
+ * 24 catalogue fields, so it's invisible to insertPartsFor and contentHashOf. */
+export const RECORD_KEY_FIELD = "__record_key";
+
 export function recordInsertValues(byField: FieldRow): (string | number | null)[] {
   const { values, yearSort, norms } = insertPartsFor(byField);
-  // Stored so the overlay tables (whose only durable handle on a record is this
-  // key) can be joined back to the live row — see the record_key note in
-  // lib/db/ddl.ts.
-  return [...values, yearSort, ...norms, computeRecordKey(byField)];
+  // The key the OVERLAY filed this record under, which is computed from the
+  // compiler's values — not from the row as it stands after corrections are
+  // merged on top. Editing an artist or title changes what computeRecordKey
+  // returns, so recomputing here would store a key that matches nothing in
+  // editor_field_edits or modification_log. Falls back to computing it for
+  // callers that build a row themselves.
+  return [...values, yearSort, ...norms, byField[RECORD_KEY_FIELD] ?? computeRecordKey(byField)];
 }
 
 /** A stable fingerprint of a record's 24 catalogue fields. Both the live
