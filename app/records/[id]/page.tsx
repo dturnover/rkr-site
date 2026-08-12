@@ -124,13 +124,14 @@ export default async function RecordPage({
   // other half of the record has to be found and shown alongside it. Format
   // and year are passed so a reused catalogue number can be told apart from a
   // genuine second side — see lib/releaseGroup.ts.
-  const siblings = await getReleaseSiblings(
-    record.id,
-    record.label_number,
-    record.label,
-    record.format,
-    record.year
-  );
+  const siblings = await getReleaseSiblings({
+    id: record.id,
+    label_number: record.label_number,
+    b_side_label_number: record.b_side_label_number,
+    label: record.label,
+    format: record.format,
+    year: record.year,
+  });
 
   const session = await getSession();
   const isEditor = !!session;

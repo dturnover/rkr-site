@@ -89,6 +89,28 @@ function agrees(a: string | null, b: string | null): boolean {
   return normalize(a ?? "") === normalize(b ?? "");
 }
 
+/** The number on a side marker: "GRED 266-B2" -> 2, "GRED 266-A" -> 0, and
+ * null where there's no marker at all. */
+function sideMarkerNumber(labelNumber: string | null | undefined): number | null {
+  if (!deriveReleaseBase(labelNumber)) return null;
+  const m = labelNumber!.trim().match(/[A-D](\d{0,2})$/i);
+  if (!m) return null;
+  return m[1] ? parseInt(m[1], 10) : 0;
+}
+
+/** Whether a set of label numbers describes a record with more than two sides.
+ *
+ * Plain A and B are just the two faces of any record, so a pair of entries
+ * marked -A and -B proves nothing — they could as easily be two unrelated
+ * records that happen to share a catalogue number. A SECOND numbered side
+ * (A2, B2) is what can only exist when the release runs past two titles, and
+ * that is the signal the compiler uses when entering them.
+ *
+ * Requiring it means an ambiguous pair is left alone rather than guessed at. */
+function hasMultiSideMarker(labelNumbers: (string | null)[]): boolean {
+  return labelNumbers.some((ln) => (sideMarkerNumber(ln) ?? 0) >= 2);
+}
+
 // LIKE treats these as wildcards, so a label number containing one would match
 // far more than it should. Escaped with a character that can't appear in a
 // catalogue number.
@@ -107,13 +129,17 @@ const MAX_GROUP = 6;
  * wildcard), then filtered exactly in JavaScript — the prefix alone would also
  * catch "GRED 2660" when looking for "GRED 266". The label has to agree too,
  * since catalogue numbers are only unique within a label. */
-export async function findReleaseSiblings(
-  recordId: number,
-  labelNumber: string | null,
-  label: string | null,
-  format: string | null,
-  year: string | null
-): Promise<ReleaseSibling[]> {
+export interface ReleaseAnchor {
+  id: number;
+  label_number: string | null;
+  b_side_label_number: string | null;
+  label: string | null;
+  format: string | null;
+  year: string | null;
+}
+
+export async function findReleaseSiblings(anchor: ReleaseAnchor): Promise<ReleaseSibling[]> {
+  const { id: recordId, label_number: labelNumber, label, format, year } = anchor;
   const key = releaseKeyOf(labelNumber);
   if (!key) return [];
 
@@ -140,6 +166,16 @@ export async function findReleaseSiblings(
   // Too many to be one record's sides: the number is reused, not subdivided.
   if (group.length + 1 > MAX_GROUP) return [];
 
+  // Every side marker in play, from both the A and B columns of every entry.
+  // Without a numbered one among them there is no evidence this is a release
+  // with more than two titles, so leave it alone.
+  const markers = [
+    labelNumber,
+    anchor.b_side_label_number,
+    ...group.flatMap((r) => [r.label_number, r.b_side_label_number]),
+  ];
+  if (!hasMultiSideMarker(markers)) return [];
+
   return group;
 }
 
@@ -155,16 +191,10 @@ const cachedSiblings = unstable_cache(findReleaseSiblings, ["release-siblings"],
  * can switch the whole feature off without a deploy (lib/settings.ts), and any
  * error here degrades to showing no panel rather than propagating. Either way
  * the record itself still renders exactly as it did before this existed. */
-export async function getReleaseSiblings(
-  recordId: number,
-  labelNumber: string | null,
-  label: string | null,
-  format: string | null,
-  year: string | null
-): Promise<ReleaseSibling[]> {
+export async function getReleaseSiblings(anchor: ReleaseAnchor): Promise<ReleaseSibling[]> {
   try {
     if (!(await isEnabled(FLAG_RELEASE_GROUPING))) return [];
-    return await cachedSiblings(recordId, labelNumber, label, format, year);
+    return await cachedSiblings(anchor);
   } catch {
     return [];
   }
