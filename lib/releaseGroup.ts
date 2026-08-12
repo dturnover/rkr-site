@@ -32,7 +32,10 @@ import { CATALOGUE_TAG } from "@/lib/cacheTags";
 export function deriveReleaseBase(labelNumber: string | null | undefined): string | null {
   if (!labelNumber) return null;
   const trimmed = labelNumber.trim();
-  const m = trimmed.match(/^(.+?)([\s._\-/]+)?([A-D]{1,2})$/i);
+  // A side marker is a letter, optionally numbered: -A, -B, -A1, -B2. The
+  // numbered form is what a 12" actually uses, since four sides of music need
+  // more than two names (observed: GRED 266-A alongside GRED 266-B2).
+  const m = trimmed.match(/^(.+?)([\s._\-/]+)?([A-D]{1,2}\d{0,2})$/i);
   if (!m) return null;
 
   const head = m[1];

@@ -8,7 +8,7 @@ import { getSession } from "@/lib/auth/requireAdmin";
 import { computeRecordKey, getRecordLog } from "@/lib/editor/overlay";
 import { checkCrawlGuard } from "@/lib/crawlGuard";
 import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
-import { getReleaseSiblings } from "@/lib/releaseGroup";
+import { deriveReleaseBase, getReleaseSiblings } from "@/lib/releaseGroup";
 import ReleaseTracks from "@/components/ReleaseTracks";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
@@ -182,7 +182,11 @@ export default async function RecordPage({
 
       <TrackDetailCard record={record} />
 
-      <ReleaseTracks siblings={siblings} labelNumber={record.label_number} />
+      <ReleaseTracks
+        record={record}
+        siblings={siblings}
+        base={deriveReleaseBase(record.label_number)}
+      />
 
       {isEditor && (
         <div id="editor-tools" className="mt-6 scroll-mt-4">
