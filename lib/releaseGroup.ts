@@ -68,6 +68,7 @@ export interface ReleaseSibling {
   title: string | null;
   b_side_artist: string | null;
   b_side_title: string | null;
+  b_side_label_number: string | null;
   format: string | null;
   year: string | null;
 }
@@ -117,7 +118,8 @@ export async function findReleaseSiblings(
 
   const client = await getClient();
   const res = await client.execute({
-    sql: `SELECT id, label_number, artist, title, b_side_artist, b_side_title, format, year
+    sql: `SELECT id, label_number, artist, title,
+                 b_side_artist, b_side_title, b_side_label_number, format, year
           FROM records
           WHERE label_number LIKE ? ESCAPE '\\'
             AND id <> ?
