@@ -8,6 +8,8 @@ import { getSession } from "@/lib/auth/requireAdmin";
 import { computeRecordKey, getRecordLog } from "@/lib/editor/overlay";
 import { checkCrawlGuard } from "@/lib/crawlGuard";
 import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
+import { getReleaseSiblings } from "@/lib/releaseGroup";
+import ReleaseTracks from "@/components/ReleaseTracks";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
 // `back` comes from a URL query param, so it's untrusted input even though
@@ -118,6 +120,10 @@ export default async function RecordPage({
   const editError = first(sp.editError) === "1";
   const deleteError = first(sp.deleteError);
 
+  // A 12" or EP is entered as two rows sharing a base label number, so the
+  // other half of the record has to be found and shown alongside it.
+  const siblings = await getReleaseSiblings(record.id, record.label_number, record.label);
+
   const session = await getSession();
   const isEditor = !!session;
   const log = isEditor ? await getRecordLog(computeRecordKey(record)) : [];
@@ -175,6 +181,8 @@ export default async function RecordPage({
       )}
 
       <TrackDetailCard record={record} />
+
+      <ReleaseTracks siblings={siblings} labelNumber={record.label_number} />
 
       {isEditor && (
         <div id="editor-tools" className="mt-6 scroll-mt-4">
