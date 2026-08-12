@@ -6,6 +6,8 @@ import { listPendingInvites } from "@/lib/auth/invites";
 import { inviteUrl, isEmailConfigured } from "@/lib/email/send";
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
 import { countNotesForEditor, countUnreviewedLog } from "@/lib/editor/overlay";
+import { FLAGS, getAllFlags } from "@/lib/settings";
+import FeatureSwitches from "@/components/FeatureSwitches";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import BlobUploadForm from "@/components/BlobUploadForm";
 import CopyLink from "@/components/CopyLink";
@@ -51,6 +53,8 @@ export default async function AdminPage({
   const resetToken = first(sp.resetToken);
   const mailTest = first(sp.mailTest); // "sent" | "link" | "failed" | "invalid"
   const mailError = first(sp.mailError);
+  const flagKey = first(sp.flag);
+  const flagState = first(sp.state);
 
   const session = await getSession();
 
@@ -137,6 +141,7 @@ export default async function AdminPage({
   const useBlobUpload = !!process.env.BLOB_READ_WRITE_TOKEN;
   const emailReady = isEmailConfigured();
   const unreviewedCount = await countUnreviewedLog();
+  const flags = await getAllFlags();
 
   return (
     <div className="max-w-xl mx-auto">
@@ -206,6 +211,12 @@ export default async function AdminPage({
       {editorError === "invalid" && (
         <Banner tone="bad">Enter a name and a valid email address.</Banner>
       )}
+      {flagKey && FLAGS[flagKey] && (
+        <Banner tone={flagState === "off" ? "warn" : "good"}>
+          <strong>{FLAGS[flagKey].label}</strong> is now {flagState === "off" ? "off" : "back on"}.{" "}
+          {flagState === "off" ? FLAGS[flagKey].whenOff : "It is running again."}
+        </Banner>
+      )}
       {error === "file-too-large" && (
         <Banner tone="bad">That file is too large. The CSV must be under 300MB.</Banner>
       )}
@@ -214,6 +225,8 @@ export default async function AdminPage({
         !["invalid-password", "unauthorized", "file-too-large", "no-file"].includes(error) && (
           <Banner tone="bad">Error: {error}</Banner>
         )}
+
+      <FeatureSwitches flags={flags} />
 
       <section className="frame-double bg-paper p-6 mb-6">
         <h2 className="font-display text-lg text-ink mb-3">Current Catalogue</h2>

@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
 import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { FLAG_RELEASE_GROUPING, isEnabled } from "@/lib/settings";
 
 // Reuniting the sides of a multi-track release.
 //
@@ -142,7 +143,29 @@ export async function findReleaseSiblings(
   return group;
 }
 
-export const getReleaseSiblings = unstable_cache(findReleaseSiblings, ["release-siblings"], {
+const cachedSiblings = unstable_cache(findReleaseSiblings, ["release-siblings"], {
   tags: [CATALOGUE_TAG],
   revalidate: 3600,
 });
+
+/** What the record page calls.
+ *
+ * Grouping is an ADDITION to a page that was complete without it, so it must
+ * never be the reason that page fails. Two ways out are guaranteed: an admin
+ * can switch the whole feature off without a deploy (lib/settings.ts), and any
+ * error here degrades to showing no panel rather than propagating. Either way
+ * the record itself still renders exactly as it did before this existed. */
+export async function getReleaseSiblings(
+  recordId: number,
+  labelNumber: string | null,
+  label: string | null,
+  format: string | null,
+  year: string | null
+): Promise<ReleaseSibling[]> {
+  try {
+    if (!(await isEnabled(FLAG_RELEASE_GROUPING))) return [];
+    return await cachedSiblings(recordId, labelNumber, label, format, year);
+  } catch {
+    return [];
+  }
+}
