@@ -255,6 +255,15 @@ export default async function AdminPage({
           <span className="text-ink-soft"> &mdash; download the catalogue as it was before any recent upload.</span>
         </p>
         <p className="font-body text-sm mt-2">
+          <Link href="/admin/traffic" className="text-link underline hover:text-rasta-red">
+            Bulk copying
+          </Link>
+          <span className="text-ink-soft">
+            {" "}
+            &mdash; anyone reading fast enough to be taking the whole catalogue.
+          </span>
+        </p>
+        <p className="font-body text-sm mt-2">
           <Link href="/admin/edits" className="text-link underline hover:text-rasta-red">
             Editor overrides
           </Link>

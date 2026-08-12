@@ -6,6 +6,8 @@ import EditorPanel from "@/components/EditorPanel";
 import { getRecordById } from "@/lib/queries/records";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { computeRecordKey, getRecordLog } from "@/lib/editor/overlay";
+import { checkCrawlGuard } from "@/lib/crawlGuard";
+import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
 // `back` comes from a URL query param, so it's untrusted input even though
@@ -98,6 +100,14 @@ export default async function RecordPage({
   const recordId = parseInt(id, 10);
   if (!Number.isFinite(recordId)) notFound();
 
+  // Detail pages are the surface a bulk copy has to walk — one request per
+  // record, 135k of them — so the rate check goes here. Search engines are
+  // exempt and it fails open; see lib/crawlGuard.ts.
+  const guard = await checkCrawlGuard();
+  if (guard.action === "block") {
+    return <CrawlBlocked retryAfterMinutes={guard.retryAfterMinutes} />;
+  }
+
   const record = await getRecordById(recordId);
   if (!record) notFound();
 
@@ -122,6 +132,8 @@ export default async function RecordPage({
           &laquo; Back to results
         </Link>
       )}
+
+      {guard.action === "warn" && <CrawlWarning />}
 
       {created && (
         <div className="border-2 border-rasta-green text-rasta-green bg-paper px-4 py-2 font-body mb-4">

@@ -3,6 +3,8 @@ import { keywordSearch, advancedSearch, type AdvancedSearchFields } from "@/lib/
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import { allowSearch } from "@/lib/searchThrottle";
+import { checkCrawlGuard, RESULTS_PAGE_WEIGHT, type GuardVerdict } from "@/lib/crawlGuard";
+import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
 
 // Field-selector searches route through advancedSearch()'s single-field
 // substring LIKE, which can take up to ~100s on the current Turso database
@@ -45,6 +47,7 @@ export default async function SearchPage({
 
   // Throttle before doing any query work. Only actual searches (q present)
   // count against the limit; an empty search does no work.
+  let guard: GuardVerdict = { action: "allow" };
   if (q.trim()) {
     if (!(await allowSearch())) {
       return (
@@ -56,6 +59,13 @@ export default async function SearchPage({
         </div>
       );
     }
+    // The throttle above caps how many *queries* one source can run; this caps
+    // how much of the catalogue it can carry away, which paging through one
+    // broad search would otherwise do just as well as crawling.
+    guard = await checkCrawlGuard({ weight: RESULTS_PAGE_WEIGHT });
+    if (guard.action === "block") {
+      return <CrawlBlocked retryAfterMinutes={guard.retryAfterMinutes} />;
+    }
   }
 
   const { rows, total } = !q.trim()
@@ -66,6 +76,7 @@ export default async function SearchPage({
 
   return (
     <div>
+      {guard.action === "warn" && <CrawlWarning />}
       <h1 className="font-display text-3xl text-ink mb-1">Search Results</h1>
       <p className="font-body text-ink-soft mb-6">
         {q ? (

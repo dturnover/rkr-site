@@ -5,6 +5,8 @@ import { FACETS, isFacetSlug } from "@/lib/facetConfig";
 import { getFacetValueRows } from "@/lib/queries/browse";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { checkCrawlGuard, RESULTS_PAGE_WEIGHT } from "@/lib/crawlGuard";
+import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
 
 // Default-order page loads are fast (id-ordered, index-satisfied — see
 // lib/queries/shared.ts), but an explicit column-header sort on a large
@@ -29,12 +31,18 @@ export default async function FacetValuePage({
   const dir = first(sp.dir) ?? "asc";
   const page = parsePage(first(sp.page));
 
+  const guard = await checkCrawlGuard({ weight: RESULTS_PAGE_WEIGHT });
+  if (guard.action === "block") {
+    return <CrawlBlocked retryAfterMinutes={guard.retryAfterMinutes} />;
+  }
+
   const { rows, total, label } = await getFacetValueRows(facetParam, value, { sort, dir, page });
 
   if (total === 0 && page === 1) notFound();
 
   return (
     <div>
+      {guard.action === "warn" && <CrawlWarning />}
       <Link href={`/browse/${facet.slug}`} className="font-body text-sm text-ink-soft hover:text-rasta-red">
         &laquo; All {facet.label}
       </Link>
