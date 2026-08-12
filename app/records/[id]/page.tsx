@@ -121,8 +121,16 @@ export default async function RecordPage({
   const deleteError = first(sp.deleteError);
 
   // A 12" or EP is entered as two rows sharing a base label number, so the
-  // other half of the record has to be found and shown alongside it.
-  const siblings = await getReleaseSiblings(record.id, record.label_number, record.label);
+  // other half of the record has to be found and shown alongside it. Format
+  // and year are passed so a reused catalogue number can be told apart from a
+  // genuine second side — see lib/releaseGroup.ts.
+  const siblings = await getReleaseSiblings(
+    record.id,
+    record.label_number,
+    record.label,
+    record.format,
+    record.year
+  );
 
   const session = await getSession();
   const isEditor = !!session;
