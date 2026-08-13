@@ -34,19 +34,43 @@ const B_SIDE: FieldDef[] = [
   { name: "b_side_matrix_number", label: "B-Side Matrix No." },
 ];
 
+/** Namespace for the optional second song's inputs. The create route reads it
+ * back to decide whether one entry is being made or a pair. */
+export const SECOND_SIDE_PREFIX = "side2_";
+
 const inputClass =
   "border border-paper-stain bg-paper px-2 py-1.5 font-body text-sm text-ink focus:outline-none focus:border-rasta-red w-full";
 
-function FieldInputs({ fields, values }: { fields: FieldDef[]; values: Partial<Record<string, string | null>> }) {
+/** `prefix` namespaces the inputs so a second full song can be entered on the
+ * same form without colliding with the first (see SECOND_SIDE_PREFIX). */
+function FieldInputs({
+  fields,
+  values,
+  prefix = "",
+}: {
+  fields: FieldDef[];
+  values: Partial<Record<string, string | null>>;
+  prefix?: string;
+}) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3">
       {fields.map((f) => (
         <label key={f.name} className={`flex flex-col gap-1 ${f.area ? "sm:col-span-2" : ""}`}>
           <span className="font-body text-xs uppercase tracking-wide text-ink-soft">{f.label}</span>
           {f.area ? (
-            <textarea name={f.name} rows={2} defaultValue={values[f.name] ?? ""} className={inputClass} />
+            <textarea
+              name={`${prefix}${f.name}`}
+              rows={2}
+              defaultValue={prefix ? "" : values[f.name] ?? ""}
+              className={inputClass}
+            />
           ) : (
-            <input type="text" name={f.name} defaultValue={values[f.name] ?? ""} className={inputClass} />
+            <input
+              type="text"
+              name={`${prefix}${f.name}`}
+              defaultValue={prefix ? "" : values[f.name] ?? ""}
+              className={inputClass}
+            />
           )}
         </label>
       ))}
@@ -62,11 +86,15 @@ export default function EditorRecordForm({
   recordId,
   values,
   submitLabel,
+  allowSecondSide = false,
 }: {
   action: string;
   recordId?: number;
   values: Partial<Record<string, string | null>>;
   submitLabel: string;
+  /** Offer to describe the flip side as a full song too, creating both
+   * entries at once. Only on creation — editing changes one entry. */
+  allowSecondSide?: boolean;
 }) {
   return (
     <form action={action} method="POST" className="flex flex-col gap-6">
@@ -84,15 +112,45 @@ export default function EditorRecordForm({
             so say plainly that it isn't, and point at the convention the
             compiler actually uses. */}
         The B-side fields below are deliberately brief &mdash; the catalogue records a flip side
-        by artist, title and numbers only. To give a flip side its <em>own</em> producer, riddim,
-        genre or notes, add it as a <strong>second entry</strong> with that song as the A-side.
-        Both entries share the label number, so the site shows them together as one record.
+        by artist, title and numbers only, and has no B-side producer, riddim or genre.
+        {allowSecondSide ? (
+          <>
+            {" "}
+            If the flip side is a song in its own right, use{" "}
+            <strong>Describe the B-side fully</strong> below and both entries are made together.
+          </>
+        ) : (
+          <>
+            {" "}
+            To give a flip side its <em>own</em> producer, riddim or genre, add it as a second
+            entry with that song as the A-side.
+          </>
+        )}
       </div>
 
       <div>
         <h4 className="font-display text-lg text-rasta-green mb-3">B-Side</h4>
         <FieldInputs fields={B_SIDE} values={values} />
       </div>
+
+      {allowSecondSide && (
+        <details className="border-2 border-frame bg-parchment/30 p-4">
+          <summary className="cursor-pointer font-body text-ink select-none">
+            <strong>Describe the B-side fully</strong>{" "}
+            <span className="text-ink-soft text-sm">
+              &mdash; when the flip side is a song in its own right
+            </span>
+          </summary>
+          <p className="font-body text-sm text-ink-soft mt-3 mb-4">
+            Fill this in and <strong>two entries are created in one go</strong>: this record from
+            the A-side&rsquo;s point of view, and a second from the B-side&rsquo;s, each carrying
+            its own producer, riddim, genre and notes. They point at each other, and label,
+            country, year and format carry over from above if you leave them blank here. Leave
+            this closed for an ordinary single &mdash; the six B-side fields above are enough.
+          </p>
+          <FieldInputs fields={A_SIDE} values={{}} prefix={SECOND_SIDE_PREFIX} />
+        </details>
+      )}
 
       <button
         type="submit"

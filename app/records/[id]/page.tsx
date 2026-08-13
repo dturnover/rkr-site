@@ -116,7 +116,8 @@ export default async function RecordPage({
   const sp = await searchParams;
   const backHref = safeBackHref(first(sp.back));
   const saved = first(sp.saved);
-  const created = first(sp.created) === "1";
+  const createdState = first(sp.created);
+  const created = createdState === "1" || createdState === "pair";
   const editError = first(sp.editError) === "1";
   const deleteError = first(sp.deleteError);
 
@@ -152,7 +153,9 @@ export default async function RecordPage({
 
       {created && (
         <div className="border-2 border-rasta-green text-rasta-green bg-paper px-4 py-2 font-body mb-4">
-          New track created.
+          {createdState === "pair"
+            ? "Both entries created — this side, and the B-side as its own entry with its own producer, riddim and genre."
+            : "New track created."}
         </div>
       )}
       {saved != null && (

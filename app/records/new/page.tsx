@@ -67,7 +67,12 @@ export default async function NewRecordPage({
       )}
 
       <div className="frame-double bg-paper p-5 sm:p-7">
-        <EditorRecordForm action="/api/editor/create" values={values} submitLabel="Create Track" />
+        <EditorRecordForm
+          action="/api/editor/create"
+          values={values}
+          submitLabel="Create Track"
+          allowSecondSide
+        />
       </div>
     </div>
   );
