@@ -268,6 +268,15 @@ export default async function AdminPage({
           <span className="text-ink-soft"> &mdash; download the catalogue as it was before any recent upload.</span>
         </p>
         <p className="font-body text-sm mt-2">
+          <Link href="/admin/matrix" className="text-link underline hover:text-rasta-red">
+            Mismatched matrix numbers
+          </Link>
+          <span className="text-ink-soft">
+            {" "}
+            &mdash; songs whose matrix reads differently on their own entry and as a B-side.
+          </span>
+        </p>
+        <p className="font-body text-sm mt-2">
           <Link href="/admin/traffic" className="text-link underline hover:text-rasta-red">
             Bulk copying
           </Link>
