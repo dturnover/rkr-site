@@ -8,7 +8,7 @@ import { getSession } from "@/lib/auth/requireAdmin";
 import { computeRecordKey, getRecordLog } from "@/lib/editor/overlay";
 import { checkCrawlGuard } from "@/lib/crawlGuard";
 import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
-import { deriveReleaseBase, getReleaseSiblings } from "@/lib/releaseGroup";
+import { deriveReleaseBase, findStubMismatches, getReleaseSiblings } from "@/lib/releaseGroup";
 import ReleaseTracks from "@/components/ReleaseTracks";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
@@ -137,6 +137,9 @@ export default async function RecordPage({
   const session = await getSession();
   const isEditor = !!session;
   const log = isEditor ? await getRecordLog(computeRecordKey(record)) : [];
+  // Read-only: where a paired entry's stub disagrees with this entry. Computed
+  // from siblings already fetched above, so it costs nothing extra.
+  const mismatches = isEditor ? findStubMismatches(record, siblings) : [];
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -202,7 +205,12 @@ export default async function RecordPage({
 
       {isEditor && (
         <div id="editor-tools" className="mt-6 scroll-mt-4">
-          <EditorPanel record={record} log={log} editorName={session.name} />
+          <EditorPanel
+            record={record}
+            log={log}
+            editorName={session.name}
+            mismatches={mismatches}
+          />
         </div>
       )}
     </div>

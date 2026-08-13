@@ -70,6 +70,8 @@ export interface ReleaseSibling {
   b_side_artist: string | null;
   b_side_title: string | null;
   b_side_label_number: string | null;
+  matrix_number: string | null;
+  b_side_matrix_number: string | null;
   format: string | null;
   year: string | null;
 }
@@ -145,8 +147,9 @@ export async function findReleaseSiblings(anchor: ReleaseAnchor): Promise<Releas
 
   const client = await getClient();
   const res = await client.execute({
-    sql: `SELECT id, label_number, artist, title,
-                 b_side_artist, b_side_title, b_side_label_number, format, year
+    sql: `SELECT id, label_number, artist, title, matrix_number,
+                 b_side_artist, b_side_title, b_side_label_number,
+                 b_side_matrix_number, format, year
           FROM records
           WHERE label_number LIKE ? ESCAPE '\\'
             AND id <> ?
@@ -198,4 +201,54 @@ export async function getReleaseSiblings(anchor: ReleaseAnchor): Promise<Release
   } catch {
     return [];
   }
+}
+
+
+export interface StubMismatch {
+  siblingId: number;
+  siblingLabelNumber: string | null;
+  field: "matrix number" | "label number";
+  /** What this entry says, as the song's own entry. */
+  here: string | null;
+  /** What the other entry says, referring to this song as its B-side. */
+  there: string | null;
+}
+
+/** Where another entry in the same release refers to THIS song as its B side
+ * but records it differently.
+ *
+ * The same song is stored twice — once as its own entry, once as a stub on the
+ * back of its pair — so editing one leaves the other stale. Worse, the stubs
+ * were often filled in with partial matrix numbers before the full matrix was
+ * understood to matter, so many disagree for historical reasons rather than
+ * because anyone edited anything.
+ *
+ * This only ever REPORTS. Matching stubs to entries is exactly what the
+ * compiler describes as unreliable in his own data, so nothing is copied
+ * automatically — a wrong match that merely shows a question costs a glance,
+ * while a wrong match that rewrites a matrix number damages the reference. */
+export function findStubMismatches(
+  record: { title: string | null; matrix_number: string | null; label_number: string | null },
+  siblings: ReleaseSibling[]
+): StubMismatch[] {
+  const same = (a: string | null, b: string | null) =>
+    normalize(a ?? "") === normalize(b ?? "");
+  const out: StubMismatch[] = [];
+
+  for (const s of siblings) {
+    // Only entries actually pointing at this song.
+    if (!record.title?.trim() || !same(s.b_side_title, record.title)) continue;
+
+    const pairs: [StubMismatch["field"], string | null, string | null][] = [
+      ["matrix number", record.matrix_number, s.b_side_matrix_number],
+      ["label number", record.label_number, s.b_side_label_number],
+    ];
+    for (const [field, here, there] of pairs) {
+      // Nothing to say when this entry has no value of its own to compare.
+      if (!here?.trim()) continue;
+      if (same(here, there)) continue;
+      out.push({ siblingId: s.id, siblingLabelNumber: s.label_number, field, here, there });
+    }
+  }
+  return out;
 }

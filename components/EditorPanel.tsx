@@ -3,6 +3,7 @@ import type { RecordDetail } from "@/lib/queries/records";
 import { EDITABLE_FIELDS, type LogEntry } from "@/lib/editor/overlay";
 import EditorRecordForm from "./EditorRecordForm";
 import { hasFlipSide } from "@/lib/editor/flipSide";
+import type { StubMismatch } from "@/lib/releaseGroup";
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -34,10 +35,15 @@ export default function EditorPanel({
   record,
   log,
   editorName,
+  mismatches = [],
 }: {
   record: RecordDetail;
   log: LogEntry[];
   editorName: string;
+  /** Other entries in this release that list this song as their B side but
+   * record its numbers differently. Reported only — never corrected
+   * automatically; see findStubMismatches. */
+  mismatches?: StubMismatch[];
 }) {
   const values: Partial<Record<string, string | null>> = {};
   for (const f of EDITABLE_FIELDS) values[f] = record[f as keyof RecordDetail] as string | null;
@@ -74,6 +80,36 @@ export default function EditorPanel({
                   {n.note_at ? `, ${formatWhen(n.note_at)}` : ""} &mdash; on &ldquo;{logLine(n)}
                   &rdquo;
                 </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {mismatches.length > 0 && (
+        <div className="border-2 border-rasta-gold bg-paper p-4 mb-4">
+          <h4 className="font-body text-xs uppercase tracking-wide text-ink-soft mb-2">
+            Recorded differently elsewhere
+          </h4>
+          <p className="font-body text-sm text-ink-soft mb-3">
+            This song also appears as the B-side of another entry on the same release, where its
+            numbers don&rsquo;t match what&rsquo;s here. Often that&rsquo;s an old partial entry
+            rather than a mistake &mdash; nothing has been changed, this is just flagged so it
+            can be checked.
+          </p>
+          <ul className="space-y-2 font-body text-sm">
+            {mismatches.map((m, i) => (
+              <li key={i}>
+                <Link
+                  href={`/records/${m.siblingId}`}
+                  className="text-link underline hover:text-rasta-red"
+                >
+                  {m.siblingLabelNumber || `entry ${m.siblingId}`}
+                </Link>{" "}
+                <span className="text-ink-soft">lists this song&rsquo;s {m.field} as</span>{" "}
+                <span className="text-error">{m.there?.trim() ? m.there : "(blank)"}</span>
+                <span className="text-ink-soft">; here it is</span>{" "}
+                <span className="text-rasta-green">{m.here}</span>
               </li>
             ))}
           </ul>
