@@ -77,6 +77,18 @@ export default function EditorRecordForm({
         <FieldInputs fields={A_SIDE} values={values} />
       </div>
 
+      <div className="border-l-2 border-rasta-gold pl-3 font-body text-sm text-ink-soft">
+        {/* The six B-side columns below are all the catalogue has — there is no
+            B-side producer, riddim, genre or year, in the spreadsheet either.
+            Editors hit this and reasonably assume the form is missing fields,
+            so say plainly that it isn't, and point at the convention the
+            compiler actually uses. */}
+        The B-side fields below are deliberately brief &mdash; the catalogue records a flip side
+        by artist, title and numbers only. To give a flip side its <em>own</em> producer, riddim,
+        genre or notes, add it as a <strong>second entry</strong> with that song as the A-side.
+        Both entries share the label number, so the site shows them together as one record.
+      </div>
+
       <div>
         <h4 className="font-display text-lg text-rasta-green mb-3">B-Side</h4>
         <FieldInputs fields={B_SIDE} values={values} />

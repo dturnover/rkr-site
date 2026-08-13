@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { RecordDetail } from "@/lib/queries/records";
 import { EDITABLE_FIELDS, type LogEntry } from "@/lib/editor/overlay";
 import EditorRecordForm from "./EditorRecordForm";
+import { hasFlipSide } from "@/lib/editor/flipSide";
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -93,11 +94,28 @@ export default function EditorPanel({
         </div>
       </details>
 
-      <p className="font-body text-sm mb-4">
+      <p className="font-body text-sm mb-2">
         <Link href="/records/new" className="text-link hover:text-rasta-red">
           + Add a new track
         </Link>
       </p>
+
+      {/* The B side only gets six columns, so a flip side that deserves its own
+          producer, riddim or genre has to become its own entry — the compiler's
+          own convention, and what pairs of entries on a 12" already look like.
+          Offered here because this is where an editor discovers the limit. */}
+      {hasFlipSide(record) && (
+        <p className="font-body text-sm mb-4">
+          <Link href={`/records/new?flip=${record.id}`} className="text-link hover:text-rasta-red">
+            + Give the B-side its own entry
+          </Link>
+          <span className="text-ink-soft">
+            {" "}
+            &mdash; for its own producer, riddim, genre or notes, which the B-side fields
+            don&rsquo;t carry.
+          </span>
+        </p>
+      )}
 
       {/* Deleting is folded away behind its own <details> and gated on a
           checkbox, so it can't be hit by mistake while editing. */}
