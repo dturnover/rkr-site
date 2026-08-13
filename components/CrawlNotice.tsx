@@ -30,6 +30,13 @@ export function CrawlWarning() {
 export function CrawlBlocked({ retryAfterMinutes }: { retryAfterMinutes: number }) {
   return (
     <div className="max-w-2xl mx-auto">
+      {/* This stands in for a real record, so it must never be mistaken for
+          one. Search engines are exempt from the rate limit and shouldn't
+          reach this at all — but if one ever did, without this it would index
+          "taking a breather" as that record's content and quietly replace a
+          real catalogue page in the results. React hoists the tag into the
+          document head. */}
+      <meta name="robots" content="noindex, nofollow, noarchive" />
       <div className="frame-double bg-paper p-6 sm:p-8">
         <h1 className="font-display text-2xl text-ink mb-3">Taking a short breather</h1>
         <p className="font-body text-ink mb-4">
