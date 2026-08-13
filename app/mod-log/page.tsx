@@ -137,7 +137,11 @@ export default async function ModLogPage({
                     <tr
                       key={e.id}
                       className={`border-b border-paper-stain/60 ${
-                        reviewed ? "bg-rasta-green/5" : ""
+                        e.note
+                          ? "bg-rasta-gold/10"
+                          : reviewed
+                            ? "bg-rasta-green/5"
+                            : ""
                       }`}
                     >
                       {isAdmin && (
@@ -177,13 +181,17 @@ export default async function ModLogPage({
                         <ChangeCell e={e} />
 
                         {e.note && (
-                          <p className="mt-1.5 border-l-2 border-rasta-gold pl-2 text-ink">
-                            <span className="text-ink-soft text-xs uppercase tracking-wide">
-                              Note to editor
-                            </span>
-                            <br />
-                            {e.note}
-                          </p>
+                          <div className="mt-2 border-l-4 border-rasta-gold bg-rasta-gold/15 px-3 py-2">
+                            <p className="font-body text-xs uppercase tracking-wider text-ink font-semibold mb-0.5">
+                              ✎ Note to editor
+                            </p>
+                            <p className="text-ink">{e.note}</p>
+                            {e.note_by && (
+                              <p className="text-ink-soft text-xs mt-1">
+                                &mdash; {e.note_by}
+                              </p>
+                            )}
+                          </div>
                         )}
 
                         {isAdmin && (

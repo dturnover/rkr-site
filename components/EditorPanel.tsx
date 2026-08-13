@@ -208,10 +208,15 @@ export default function EditorPanel({
                   </span>
                 )}
                 {e.note && (
-                  <p className="border-l-2 border-rasta-gold pl-2 mt-1 text-ink">
-                    {e.note}
-                    <span className="text-ink-soft text-xs"> — {e.note_by ?? "the compiler"}</span>
-                  </p>
+                  <div className="border-l-4 border-rasta-gold bg-rasta-gold/15 px-3 py-2 mt-1.5">
+                    <p className="font-body text-xs uppercase tracking-wider text-ink font-semibold mb-0.5">
+                      ✎ Note to editor
+                    </p>
+                    <p className="text-ink">{e.note}</p>
+                    <p className="text-ink-soft text-xs mt-1">
+                      &mdash; {e.note_by ?? "the compiler"}
+                    </p>
+                  </div>
                 )}
               </li>
             ))}
