@@ -58,6 +58,15 @@ export default function HistoryPage() {
         author, in collaboration with the many collectors and researchers who have helped keep
         this project alive.
       </p>
+
+      {/* The editors working on the database directly, credited separately from
+          the general contributor list below — several appear in both, which is
+          intended: one names who has sent information over the years, this
+          names who is maintaining it now. */}
+      <p className="not-italic">
+        <strong>Contributing Editors:</strong> Andy Lambourn, David Diamant, Johan Lindgren,
+        Brian Keyo
+      </p>
       <p>
         RKR was initially inspired by the work of Charlie Morgan, whose <em>Coxson&rsquo;s Music</em>{" "}
         was the first published discography of Jamaican records. Building on Charlie&rsquo;s
