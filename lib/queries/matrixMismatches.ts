@@ -37,6 +37,10 @@ export interface MatrixMismatch {
   song: string;
   artist: string | null;
   label: string | null;
+  /** The pressing, shown so a wrong pair is obvious rather than trusted. */
+  country: string | null;
+  year: string | null;
+  format: string | null;
   /** The song's own entry — where the matrix number is authoritative. */
   ownId: number;
   ownLabelNumber: string | null;
@@ -70,12 +74,18 @@ export async function findMatrixMismatchesUncached(): Promise<{
   await ensureIndex();
   const client = await getClient();
 
-  // Both sides must actually carry a matrix number: a blank stub is an
-  // omission, not the divergence being hunted. The label has to agree too,
-  // since the same title on another label is a different record entirely.
+  // Two entries only describe the same physical record if they agree on every
+  // fact that identifies the pressing. Matching on label, artist and title
+  // alone paired a Jamaican side with a UK side — the same song, the same
+  // label, genuinely different records with genuinely different matrix
+  // numbers, reported as a fault. Country, format and year are what tell
+  // pressings apart, so all three must agree.
+  //
+  // Both sides must also carry a matrix number: a blank stub is an omission,
+  // not the divergence being hunted.
   const res = await client.execute({
     sql: `SELECT a.id AS own_id, a.artist, a.title, a.matrix_number AS own_matrix,
-                 a.label_number AS own_label_no, a.label,
+                 a.label_number AS own_label_no, a.label, a.country, a.year, a.format,
                  b.id AS stub_id, b.b_side_matrix_number AS stub_matrix,
                  b.label_number AS stub_label_no
           FROM records a
@@ -84,6 +94,9 @@ export async function findMatrixMismatchesUncached(): Promise<{
            AND b.id <> a.id
            AND lower(trim(coalesce(b.b_side_artist, ''))) = lower(trim(coalesce(a.artist, '')))
            AND lower(trim(coalesce(b.label, ''))) = lower(trim(coalesce(a.label, '')))
+           AND lower(trim(coalesce(b.country, ''))) = lower(trim(coalesce(a.country, '')))
+           AND lower(trim(coalesce(b.format, ''))) = lower(trim(coalesce(a.format, '')))
+           AND lower(trim(coalesce(b.year, ''))) = lower(trim(coalesce(a.year, '')))
           WHERE trim(coalesce(a.title, '')) <> ''
             AND trim(coalesce(a.matrix_number, '')) <> ''
             AND trim(coalesce(b.b_side_matrix_number, '')) <> ''
@@ -101,6 +114,9 @@ export async function findMatrixMismatchesUncached(): Promise<{
       song: String(x.title ?? ""),
       artist: x.artist == null ? null : String(x.artist),
       label: x.label == null ? null : String(x.label),
+      country: x.country == null ? null : String(x.country),
+      year: x.year == null ? null : String(x.year),
+      format: x.format == null ? null : String(x.format),
       ownId: Number(x.own_id),
       ownLabelNumber: x.own_label_no == null ? null : String(x.own_label_no),
       ownMatrix,

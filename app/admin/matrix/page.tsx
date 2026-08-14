@@ -30,7 +30,9 @@ function Row({ m }: { m: MatrixMismatch }) {
       <td className="px-3 py-2 text-ink">
         {m.artist && <span className="text-ink-soft">{m.artist} &mdash; </span>}
         {m.song}
-        {m.label && <span className="text-ink-soft text-xs block">{m.label}</span>}
+        <span className="text-ink-soft text-xs block">
+          {[m.label, m.country, m.year, m.format && `${m.format}"`].filter(Boolean).join(" · ")}
+        </span>
       </td>
       <td className="px-3 py-2">
         <Link href={`/records/${m.ownId}`} className="text-link underline hover:text-rasta-red">
