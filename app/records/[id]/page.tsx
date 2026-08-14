@@ -137,9 +137,13 @@ export default async function RecordPage({
   const session = await getSession();
   const isEditor = !!session;
   const log = isEditor ? await getRecordLog(computeRecordKey(record)) : [];
-  // Read-only: where a paired entry's stub disagrees with this entry. Computed
-  // from siblings already fetched above, so it costs nothing extra.
-  const mismatches = isEditor ? findStubMismatches(record, siblings) : [];
+  // Where a paired entry's stub disagrees with this entry. Admin only: the
+  // compiler judged this too fine-grained to put in front of editors, who
+  // would be reading it as a fault on a record they didn't enter. He keeps the
+  // catalogue-wide list at /admin/matrix; this is the same thing in passing.
+  // Computed from siblings already fetched above, so it costs nothing extra.
+  const mismatches =
+    session?.role === "admin" ? findStubMismatches(record, siblings) : [];
 
   return (
     <div className="max-w-2xl mx-auto">
