@@ -15,7 +15,7 @@ const CONTRIBUTORS = [
   "Carl Piccione", "Carter Van Pelt", "CC Smith", "Charlie Morgan", "Chris Child",
   "Chris Guttmacher", "Chris Lane", "Christoph Strobl", "Clinton Rufus", "Clive Chin",
   "Cornel Campbell", "Craig Watson", "Dan Neeley", "Daniel Delang", "Danroy Wilson",
-  "Dario Smagata-Bryan", "Dave “Studio 1” Allard", "David “Dro” Ostrowe", "David Katz", "David Kingston",
+  "Dario Smagata-Bryan", "Dave “Studio 1” Allard", "David “Dro” Ostrowe", "David Diamant", "David Katz", "David Kingston",
   "Desmond Turner", "Delroy Beckford", "Deroy Wood", "Donald Manning", "Drayton Lumumba Chandell",
   "Dudley Sibley", "Dwight Pinkney", "Earl Hayles", "Elliott Leib", "Enrico Carbonere",
   "Eric Bussel", "Eric Doumerc", "Ernest Ranglin", "Felix Ruhling", "Fred Jakobin",
