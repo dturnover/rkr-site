@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
-import { findMatrixMismatches, type MatrixMismatch } from "@/lib/queries/matrixMismatches";
+import {
+  findMatrixMismatches,
+  listDismissedPairs,
+  type MatrixMismatch,
+} from "@/lib/queries/matrixMismatches";
+import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
@@ -50,16 +55,42 @@ function Row({ m }: { m: MatrixMismatch }) {
           <Matrix value={m.stubMatrix} shared={m.sharedPrefix} />
         </span>
       </td>
+      <td className="px-3 py-2">
+        {/* Not every divergence can be fixed — some are false pairs, some are
+            simply unknowable now. Setting one aside keeps the list a worklist
+            rather than a standing reproach. Reversible from the dismissed
+            view. */}
+        <form action="/api/admin/matrix" method="POST">
+          <input type="hidden" name="action" value="dismiss" />
+          <input type="hidden" name="key" value={m.dismissKey} />
+          <input type="hidden" name="song" value={m.song} />
+          <input type="hidden" name="ownMatrix" value={m.ownMatrix} />
+          <input type="hidden" name="stubMatrix" value={m.stubMatrix} />
+          <button
+            type="submit"
+            title="Remove this from the list — it can be brought back"
+            className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink whitespace-nowrap"
+          >
+            Not an issue
+          </button>
+        </form>
+      </td>
     </tr>
   );
 }
 
-export default async function MatrixMismatchPage() {
+export default async function MatrixMismatchPage({
+  searchParams,
+}: {
+  searchParams: Promise<RawSearchParams>;
+}) {
   const session = await getSession();
   if (!session) redirect("/admin");
   if (session.role !== "admin") redirect("/admin");
 
-  const { rows, capped } = await findMatrixMismatches();
+  const showDismissed = first((await searchParams).view) === "dismissed";
+  const { rows, capped, dismissedCount } = await findMatrixMismatches();
+  const dismissed = showDismissed ? await listDismissedPairs() : [];
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -77,7 +108,59 @@ export default async function MatrixMismatchPage() {
         &mdash; open either entry to correct it.
       </p>
 
-      {rows.length === 0 ? (
+      {dismissedCount > 0 && (
+        <p className="font-body text-sm mb-4">
+          <Link
+            href={showDismissed ? "/admin/matrix" : "/admin/matrix?view=dismissed"}
+            className="text-link underline hover:text-rasta-red"
+          >
+            {showDismissed
+              ? "← Back to the list"
+              : `${dismissedCount.toLocaleString()} set aside — review them`}
+          </Link>
+        </p>
+      )}
+
+      {showDismissed ? (
+        <div className="overflow-x-auto border border-paper-stain">
+          <table className="w-full min-w-[620px] text-sm bg-paper">
+            <thead>
+              <tr className="bg-parchment-deep border-b-2 border-frame text-left font-body font-semibold text-ink">
+                <th className="px-3 py-2">Song</th>
+                <th className="px-3 py-2">Its own entry</th>
+                <th className="px-3 py-2">As a B-side</th>
+                <th className="px-3 py-2">Set aside</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="font-body">
+              {dismissed.map((d) => (
+                <tr key={d.dismiss_key} className="border-b border-paper-stain/60 align-top">
+                  <td className="px-3 py-2 text-ink">{d.song || <span className="text-ink-soft">&mdash;</span>}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-ink-soft">{d.own_matrix}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-ink-soft">{d.stub_matrix}</td>
+                  <td className="px-3 py-2 text-ink-soft text-xs">
+                    {new Date(d.dismissed_at).toLocaleDateString()}
+                    {d.dismissed_by ? ` · ${d.dismissed_by}` : ""}
+                  </td>
+                  <td className="px-3 py-2">
+                    <form action="/api/admin/matrix" method="POST">
+                      <input type="hidden" name="action" value="restore" />
+                      <input type="hidden" name="key" value={d.dismiss_key} />
+                      <button
+                        type="submit"
+                        className="font-body text-xs border border-paper-stain px-2 py-1 hover:bg-parchment-deep text-ink whitespace-nowrap"
+                      >
+                        Put back
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : rows.length === 0 ? (
         <section className="frame-double bg-paper p-6">
           <p className="font-body text-ink">
             No divergences found. Every song carrying a matrix number on its own entry matches the
@@ -104,6 +187,7 @@ export default async function MatrixMismatchPage() {
                   <th className="px-3 py-2">Song</th>
                   <th className="px-3 py-2">Its own entry</th>
                   <th className="px-3 py-2">Listed as a B-side on</th>
+                  <th className="px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody className="font-body">
