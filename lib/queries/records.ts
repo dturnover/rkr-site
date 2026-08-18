@@ -4,6 +4,13 @@ import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
 export interface RecordDetail {
   id: number;
+  // The content-derived identity (lib/editor/overlay.ts computeRecordKey), as
+  // stored on the row. Needed to look up the record's permanent catalogue
+  // number, which is filed against this and not against the id. Read the
+  // STORED value rather than recomputing it: an editor changing artist, title
+  // or matrix number would change what computeRecordKey returns, but the row
+  // stays pinned to the key the overlay filed it under (see setFieldEdit).
+  record_key: string | null;
   artist: string | null;
   artist_credit: string | null;
   title: string | null;
@@ -39,7 +46,7 @@ export const getRecordById = unstable_cache(
   async (id: number): Promise<RecordDetail | null> => {
     const client = await getClient();
     const res = await client.execute({
-      sql: `SELECT id, artist, artist_credit, title, title_credit, matrix_number, label_number,
+      sql: `SELECT id, record_key, artist, artist_credit, title, title_credit, matrix_number, label_number,
                    label, country, format, pressing, producer, year, riddim, version, genre, notes,
                    song_origin, additions, b_side_artist, b_side_artist_credit, b_side_title,
                    b_side_title_credit, b_side_matrix_number, b_side_label_number
@@ -49,7 +56,7 @@ export const getRecordById = unstable_cache(
     if (res.rows.length === 0) return null;
     return res.rows[0] as unknown as RecordDetail;
   },
-  ["record-by-id"],
+  ["record-by-id-v2"],
   { tags: [CATALOGUE_TAG], revalidate: 3600 },
 );
 

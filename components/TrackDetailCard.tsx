@@ -3,6 +3,7 @@ import type { RecordDetail } from "@/lib/queries/records";
 import { hasBSide } from "@/lib/queries/records";
 import { facetLink, type FacetSlug } from "@/lib/facetConfig";
 import { isUncertainValue, creditIfDifferent } from "@/lib/dataQuality";
+import { formatRecordNumber } from "@/lib/recordNumbers";
 
 function Field({
   label,
@@ -64,13 +65,36 @@ function capitalizeFirst(value: string | null): string | null {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-export default function TrackDetailCard({ record }: { record: RecordDetail }) {
+export default function TrackDetailCard({
+  record,
+  catalogueNumber,
+}: {
+  record: RecordDetail;
+  /** The record's permanent RKR number, or null if it has none yet / the
+   * feature is switched off. Null hides the line entirely. */
+  catalogueNumber?: number | null;
+}) {
   const showBSide = hasBSide(record);
 
   return (
     <div className="space-y-6">
       <section className="frame-double bg-paper p-5 sm:p-7">
-        <h2 className="font-display text-xl text-rasta-red mb-1">A-Side</h2>
+        {/* Heading row: the side on the left, the catalogue number set against
+            it on the right — the same placement the previous RKR site used, so
+            readers coming from there find it where they expect. `select-all`
+            because the one thing anyone does with this number is copy it into
+            an email. */}
+        <div className="flex items-baseline justify-between gap-3 mb-1">
+          <h2 className="font-display text-xl text-rasta-red">A-Side</h2>
+          {catalogueNumber != null && (
+            <span
+              className="font-catalog text-sm text-ink-soft select-all shrink-0"
+              title="This entry's permanent catalogue number. It stays the same even after the entry is corrected, so it can be quoted."
+            >
+              {formatRecordNumber(catalogueNumber)}
+            </span>
+          )}
+        </div>
         <h3 className="font-body text-2xl text-ink mb-4">
           {record.title ? (
             <Link href={titleSearchHref(record.title)} className="hover:text-rasta-red hover:underline">

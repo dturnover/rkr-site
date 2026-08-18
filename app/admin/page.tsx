@@ -7,6 +7,7 @@ import { inviteUrl, isEmailConfigured } from "@/lib/email/send";
 import { getDatabaseStatus } from "@/lib/import/atomicSwap";
 import { countNotesForEditor, countUnreviewedLog } from "@/lib/editor/overlay";
 import { FLAGS, getAllFlags } from "@/lib/settings";
+import { getRecordNumberStats } from "@/lib/recordNumbers";
 import FeatureSwitches from "@/components/FeatureSwitches";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import BlobUploadForm from "@/components/BlobUploadForm";
@@ -55,6 +56,8 @@ export default async function AdminPage({
   const mailError = first(sp.mailError);
   const flagKey = first(sp.flag);
   const flagState = first(sp.state);
+  const numbered = first(sp.numbered);
+  const numberedError = first(sp.numberedError) === "1";
 
   const session = await getSession();
 
@@ -142,6 +145,7 @@ export default async function AdminPage({
   const emailReady = isEmailConfigured();
   const unreviewedCount = await countUnreviewedLog();
   const flags = await getAllFlags();
+  const numberStats = await getRecordNumberStats().catch(() => null);
 
   return (
     <div className="max-w-xl mx-auto">
@@ -215,6 +219,18 @@ export default async function AdminPage({
         <Banner tone={flagState === "off" ? "warn" : "good"}>
           <strong>{FLAGS[flagKey].label}</strong> is now {flagState === "off" ? "off" : "back on"}.{" "}
           {flagState === "off" ? FLAGS[flagKey].whenOff : "It is running again."}
+        </Banner>
+      )}
+      {numbered != null && (
+        <Banner tone="good">
+          {Number(numbered) > 0
+            ? `Assigned ${Number(numbered).toLocaleString()} catalogue number${Number(numbered) === 1 ? "" : "s"}.`
+            : "Every record already has a catalogue number — nothing to do."}
+        </Banner>
+      )}
+      {numberedError && (
+        <Banner tone="bad">
+          Could not assign catalogue numbers. The catalogue itself is unaffected; try again.
         </Banner>
       )}
       {error === "file-too-large" && (
@@ -325,6 +341,34 @@ export default async function AdminPage({
             </button>
           </form>
         )}
+      </section>
+
+      <section className="frame-double bg-paper p-6 mb-6">
+        <h2 className="font-display text-lg text-ink mb-2">Catalogue Numbers</h2>
+        <p className="font-body text-sm text-ink-soft mb-4">
+          Each entry carries a permanent number (RKR-000123) that a reader can quote,
+          and that opens the entry at <code className="font-catalog">/records/RKR-000123</code>.
+          A number stays with its record even after the record is corrected, and is
+          never given to a different record afterwards. New records are numbered
+          automatically at the end of every upload &mdash; this button is only needed
+          the first time, or if an upload&rsquo;s numbering step failed.
+        </p>
+        {numberStats && (
+          <p className="font-body text-sm text-ink mb-4">
+            {numberStats.assigned.toLocaleString()} numbered
+            {numberStats.missing > 0
+              ? `, ${numberStats.missing.toLocaleString()} still waiting for a number.`
+              : " \u2014 nothing is waiting."}
+          </p>
+        )}
+        <form action="/api/admin/record-numbers" method="POST">
+          <button
+            type="submit"
+            className="px-4 py-2 border border-frame text-ink font-body tracking-wide hover:bg-parchment-deep transition-colors"
+          >
+            Assign missing numbers
+          </button>
+        </form>
       </section>
 
       <section className="frame-double bg-paper p-6 mb-6">

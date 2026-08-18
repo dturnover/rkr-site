@@ -13,6 +13,7 @@ import {
   PREVIOUS_CATALOG_FTS_TABLE,
 } from "@/lib/db/ddl";
 import { buildStagingTables, type ProgressFn } from "./importCsv";
+import { assignMissingRecordNumbers } from "@/lib/recordNumbers";
 
 // importAndSwap/restorePrevious both rename tables in the same database.
 // Two of these running concurrently (a double-click, two admin tabs, two
@@ -237,6 +238,23 @@ export async function importAndSwap(
       throw err;
     }
     await stampUpdatedNow();
+
+    // Same as the diff importer: hand permanent catalogue numbers to anything
+    // that doesn't have one yet (lib/recordNumbers.ts). A full rebuild
+    // renumbers every row id, so this is exactly the case the numbers exist to
+    // survive — they are keyed by record_key, so nothing here moves them.
+    // Best-effort: the catalogue is already swapped in and correct.
+    try {
+      const assigned = await assignMissingRecordNumbers();
+      if (assigned > 0) {
+        onProgress?.(`Assigned ${assigned.toLocaleString()} new catalogue number(s).`);
+      }
+    } catch (err) {
+      onProgress?.(
+        `Could not assign catalogue numbers (${err instanceof Error ? err.message : String(err)}). The catalogue itself is fine; numbers can be filled in from the admin page.`
+      );
+    }
+
     onProgress?.(`Done — the catalogue now has ${rowCount.toLocaleString()} records.`);
 
     const lowRowCountWarning =

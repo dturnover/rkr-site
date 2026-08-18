@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/ddl";
 import { acquireLock, releaseLock, startLockHeartbeat, stampUpdatedNow } from "./atomicSwap";
 import { recordImport, HISTORY_ROW_CAP } from "./importHistory";
+import { assignMissingRecordNumbers } from "@/lib/recordNumbers";
 import {
   CSV_FIELDS,
   FTS_COLUMNS,
@@ -294,6 +295,23 @@ async function runDiff(
   );
 
   if (complete) {
+    // Hand a permanent catalogue number to anything new (see lib/recordNumbers.ts).
+    // Existing records keep the number they already have, which is the whole
+    // point: a record corrected in this very import came back with a NEW row
+    // id, and its number has to follow it rather than move. Deliberately
+    // best-effort — a catalogue number is a nicety, and failing to hand one out
+    // must never fail an import that has already written every record.
+    try {
+      const assigned = await assignMissingRecordNumbers();
+      if (assigned > 0) {
+        onProgress?.(`Assigned ${assigned.toLocaleString()} new catalogue number(s).`);
+      }
+    } catch (err) {
+      onProgress?.(
+        `Could not assign catalogue numbers (${err instanceof Error ? err.message : String(err)}). The catalogue itself is fine; numbers can be filled in from the admin page.`
+      );
+    }
+
     // The atomic-swap "previous version" no longer reflects reality once we edit
     // the live table in place, so drop it (hides the misleading Restore button).
     await client.execute(`DROP TABLE IF EXISTS ${PREVIOUS_FTS_TABLE}`);

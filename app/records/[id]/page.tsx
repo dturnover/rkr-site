@@ -11,6 +11,8 @@ import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
 import { deriveReleaseBase, findStubMismatches, getReleaseSiblings } from "@/lib/releaseGroup";
 import ReleaseTracks from "@/components/ReleaseTracks";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { getRecordIdByNumber, getRecordNumberByKey, parseRecordNumber } from "@/lib/recordNumbers";
+import { FLAG_RECORD_NUMBERS, isEnabled } from "@/lib/settings";
 
 // `back` comes from a URL query param, so it's untrusted input even though
 // it only ever renders an in-page link, never a server redirect.
@@ -39,6 +41,34 @@ function safeBackHref(value: string | undefined): string | null {
   return `${resolved.pathname}${resolved.search}`;
 }
 
+// A record is reachable by two different names in this one URL segment:
+//
+//   /records/48213         the row id — what every internal link, the sitemap
+//                          and every already-indexed URL uses
+//   /records/RKR-000123    the permanent catalogue number (lib/recordNumbers.ts)
+//
+// The two namespaces overlap as bare integers, which is exactly why the
+// catalogue number is only ever recognised in its prefixed form. A plain "123"
+// is always a row id and is never quietly reinterpreted as catalogue number
+// 123 — those are two different records, and guessing between them would hand
+// a reader the wrong one.
+//
+// The row id stays canonical (see generateMetadata): the 135k already-indexed
+// URLs are built on it, and pointing search engines at a second address for
+// every page is not a change to make as a side effect of adding a number.
+async function resolveRecordId(segment: string): Promise<number | null> {
+  const catalogueNumber = parseRecordNumber(segment);
+  if (catalogueNumber != null) {
+    // Gated with the display: if the compiler switches catalogue numbers off,
+    // the addresses they created stop resolving too, rather than lingering as
+    // the one part of a disabled feature still answering.
+    if (!(await isEnabled(FLAG_RECORD_NUMBERS))) return null;
+    return await getRecordIdByNumber(catalogueNumber);
+  }
+  const rowId = parseInt(segment, 10);
+  return Number.isFinite(rowId) ? rowId : null;
+}
+
 // Per-record title/description. Without this every one of the 135k detail
 // pages inherited the site-wide title, so to a search engine they looked like
 // 135k copies of the same page — which suppresses how many get indexed at all
@@ -51,8 +81,8 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const recordId = parseInt(id, 10);
-  if (!Number.isFinite(recordId)) return {};
+  const recordId = await resolveRecordId(id);
+  if (recordId == null) return {};
   const record = await getRecordById(recordId);
   if (!record) return {};
 
@@ -99,8 +129,11 @@ export default async function RecordPage({
   searchParams: Promise<RawSearchParams>;
 }) {
   const { id } = await params;
-  const recordId = parseInt(id, 10);
-  if (!Number.isFinite(recordId)) notFound();
+  const recordId = await resolveRecordId(id);
+  // Null covers both an unreadable segment and a catalogue number whose record
+  // is no longer in the catalogue — see getRecordIdByNumber for why an orphaned
+  // number is a 404 rather than a best guess at what it used to mean.
+  if (recordId == null) notFound();
 
   // Detail pages are the surface a bulk copy has to walk — one request per
   // record, 135k of them — so the rate check goes here. Search engines are
@@ -133,6 +166,14 @@ export default async function RecordPage({
     format: record.format,
     year: record.year,
   });
+
+  // The permanent catalogue number, if the feature is on and this record has
+  // one. Anything missing simply hides the line rather than showing a
+  // placeholder — a record imported before numbering shipped, or added since
+  // the last import, has no number yet and shouldn't claim one.
+  const catalogueNumber = (await isEnabled(FLAG_RECORD_NUMBERS))
+    ? await getRecordNumberByKey(record.record_key || computeRecordKey(record))
+    : null;
 
   const session = await getSession();
   const isEditor = !!session;
@@ -199,7 +240,7 @@ export default async function RecordPage({
         </a>
       )}
 
-      <TrackDetailCard record={record} />
+      <TrackDetailCard record={record} catalogueNumber={catalogueNumber} />
 
       <ReleaseTracks
         record={record}
