@@ -65,7 +65,7 @@ export default function HistoryPage() {
           names who is maintaining it now. */}
       <p className="not-italic">
         <strong>Contributing Editors:</strong> Andy Lambourn, David Diamant, Johan Lindgren,
-        Brian Keyo
+        Brian Keyo, Phil Etgart
       </p>
       <p>
         RKR was initially inspired by the work of Charlie Morgan, whose <em>Coxson&rsquo;s Music</em>{" "}
