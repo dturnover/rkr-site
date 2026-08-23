@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { formatRecordNumber } from "@/lib/recordNumbers";
 import { redirect } from "next/navigation";
 import Pagination from "@/components/Pagination";
 import { getSession } from "@/lib/auth/requireAdmin";
@@ -133,6 +134,12 @@ export default async function ModLogPage({
                 {entries.map((e) => {
                   const reviewed = !!e.reviewed_at;
                   const recordId = e.live_record_id;
+                  // The permanent catalogue number is what gets shown when the
+                  // record has one: a row id changes whenever the record is
+                  // corrected, so a number copied out of this log stops meaning
+                  // anything — which is the whole complaint this replaces. The
+                  // id remains the fallback for a record not yet numbered.
+                  const recordNumber = e.live_record_number;
                   return (
                     <tr
                       key={e.id}
@@ -232,15 +239,26 @@ export default async function ModLogPage({
                         {e.editor_name}
                       </td>
                       <td className="px-3 py-2 align-top whitespace-nowrap">
-                        {recordId != null ? (
+                        {recordNumber != null ? (
+                          <Link
+                            href={`/records/${formatRecordNumber(recordNumber)}`}
+                            className="text-link hover:text-rasta-red font-catalog"
+                          >
+                            {formatRecordNumber(recordNumber)}
+                          </Link>
+                        ) : recordId != null ? (
                           <Link
                             href={`/records/${recordId}`}
                             className="text-link hover:text-rasta-red"
+                            title="This record has no catalogue number yet — assign them from the admin page."
                           >
                             #{recordId}
                           </Link>
                         ) : (
-                          <span className="text-ink-soft text-xs" title="This record has been deleted">
+                          <span
+                            className="text-ink-soft text-xs"
+                            title="This record can no longer be found — it was deleted, or its matrix number and title both changed after this edit."
+                          >
                             &mdash;
                           </span>
                         )}

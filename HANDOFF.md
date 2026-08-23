@@ -85,7 +85,29 @@ looking:
 
 **Shipped since:** permanent catalogue numbers, the browse lists capped at three
 columns, Phil Etgart added to the contributing editors, the B-side shortcut for
-editors, and a rendered-space fix on `/admin/edits`.
+editors, a rendered-space fix on `/admin/edits`, and the modification-log record
+column below.
+
+**The modification log's record column** was showing raw row ids, and the compiler
+reported two faults in one go: entries with no number at all ("I can't find it or go
+to it"), and numbers that led to the wrong record. Both are the same root cause and
+both are fixed:
+
+- **Dashes.** `computeRecordKey` is derived from the record's content, so an editor
+  correcting a *matrix number* — or a label number / artist / title on a record with
+  no matrix number — changes the record's identity. `setFieldEdit` pins the original
+  key on the row, which holds only until the compiler makes the same correction in
+  his spreadsheet; from that upload on the record is rebuilt under its new key and
+  every log entry filed under the old one dangles. Reproduced against a fixture
+  before fixing. The log entry records the very change that moved the key, so
+  `movedKeyFor` rebuilds the new key **from the recorded old → new value** rather
+  than guessing, requires exactly one record to answer to it, and then applies the
+  recovered record to every other entry sharing that old key — so the record's
+  earlier history comes back with it.
+- **Wrong numbers.** The column now shows the permanent catalogue number and links
+  through `/records/RKR-000123`. A row id is not a name: it changes whenever the
+  record is corrected, so a number copied out of that list stopped meaning anything.
+  The row id remains a fallback for a record not yet numbered.
 
 **One thing to do after that deploy:** press **Assign missing numbers** on `/admin`
 once. Catalogue numbers are handed out at the end of every import, so without an
@@ -104,6 +126,7 @@ twice is safe, and it reports how many it assigned.
 | Set `ADMIN_DISPLAY_NAME` = `Michael Turner` in Vercel | The bootstrap admin has no users row, so it's credited with whatever email he types at sign-in. |
 | Vercel Firewall rate rule on `/records/*` | ~100 req/min per IP, action **Challenge** not Deny. The app-level crawl guard is a speed bump; this is real enforcement. |
 | Six dropped Acknowledgements names | Roger Steffens and Penny Reel among them. Waiting on Michael. (Phil Etgart is done — he was already in the contributor list, just not on the editors line.) |
+| Catalogue number changes when a matrix number does | Same root cause as the log dashes above, still unfixed for *numbers*: correcting a matrix number moves the record's key, so it draws a fresh catalogue number and the old one 404s. The log now recovers from this; the numbers do not. See the two deferred rows above. |
 | Editor login for Phil Etgart | He is credited as a contributing editor now, but has no account. Needs his email; Michael can send the invite himself from `/admin`. Unclear whether he wants one. |
 | Verdict on `/admin/matrix` | Michael has been lukewarm twice. If still noisy after the country/format/year fix, delete it rather than keep tuning. |
 
@@ -124,12 +147,11 @@ twice is safe, and it reports how many it assigned.
   it along with everything else, and `"./lib/x.ts"`-style imports in a scratch script
   are exactly what it rejects. Keep throwaway scripts outside the repo, or delete them
   before building.
-- `npm run test:bside-entry` runs the one retained test suite
-  (`scripts/test-bside-entry.ts`, 14 cases). It exists because the B-side matching
-  rule is derived data whose rule has already been wrong once in production; the cases
-  pin down what the strictness buys so it isn't loosened by someone who only notices it
-  costs matches. There is no test runner otherwise — everything else is verified with a
-  throwaway script and deleted.
+- Two retained test suites, both for **derived** data where being confidently wrong is
+  worse than declining to answer: `npm run test:bside-entry` (14 cases) and
+  `npm run test:moved-key` (18 cases). They pin down what the strictness buys, so it
+  isn't loosened later by someone who only notices it costs matches. There is no test
+  runner otherwise — everything else is verified with a throwaway script and deleted.
 - Comments explain **why**, especially where a decision looks odd. That's the
   institutional memory across sessions — read them before changing anything.
 - `AGENTS.md` warns this Next version differs from training data; read
@@ -140,7 +162,15 @@ twice is safe, and it reports how many it assigned.
 
 - **Row ids are not stable.** Full rebuilds renumber everything; the diff importer
   gives a *changed* record a new id. Never key anything durable on them — use
-  `record_key`.
+  `record_key`. Never *show* one as a name either: the compiler reported exactly this
+  on the modification log, having written a number down and found it led elsewhere.
+  Show the catalogue number (`lib/recordNumbers.ts`).
+- **`record_key` is not stable either, and this keeps biting.** It is derived from the
+  matrix number (else label no + artist + title), so correcting any of those makes the
+  record a *different* record to every table keyed on it — the overlay, the
+  modification log, the catalogue numbers. Three separate bugs have now traced back
+  here. Anything durable keyed on `record_key` needs a story for what happens when it
+  moves.
 - **SQLite renames tables but not indexes.** After a swap, an index name can still
   exist attached to `records_previous`. `CREATE INDEX IF NOT EXISTS` then silently
   does nothing. Check `PRAGMA index_list(records)`.

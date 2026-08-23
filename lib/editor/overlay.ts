@@ -1,6 +1,7 @@
 import { getClient } from "@/lib/db/client";
 import { CATALOG_FTS_COLUMNS } from "@/lib/db/ddl";
 import { PAGE_SIZE } from "@/lib/queries/shared";
+import { getNumbersForRecordIds } from "@/lib/recordNumbers";
 
 // The editor overlay: everything editors change lives here, in tables OUTSIDE
 // the import-swap set, so it survives every CSV upload and is re-applied on
@@ -715,6 +716,52 @@ export async function removeFieldEdit(recordKey: string, field: string): Promise
   return revertedLive;
 }
 
+/** The key a record MOVED TO, worked out from the change that moved it.
+ *
+ * computeRecordKey is derived from the record's own content — the matrix
+ * number, or failing that label number + artist + title. So an editor
+ * correcting any of those fields changes the record's identity. setFieldEdit
+ * pins the original key on the row, which holds until the compiler makes the
+ * same correction in his spreadsheet; from that upload on, the record is
+ * rebuilt under its NEW key and every log entry filed under the old one
+ * dangles — the record shows as a dash, unreachable, which is exactly what he
+ * reported ("some items have appeared here without a record number").
+ *
+ * The log entry, though, records the correction that did it: matrix_number
+ * "F&R" -> "FBT 7754 FtR". So the new key is not guessed at, it is rebuilt
+ * from the recorded fact. A matrix correction gives the whole key outright; a
+ * label-number, artist or title correction on a record that had no matrix
+ * number replaces just that one component of the old lk: key.
+ *
+ * Returns null wherever the change cannot move the key (an mx: key is
+ * unaffected by an artist edit) or the old key can't be taken apart. */
+export function movedKeyFor(
+  oldKey: string,
+  field: string | null | undefined,
+  newValue: string | null | undefined
+): string | null {
+  if (!field) return null;
+  const value = (newValue ?? "").trim();
+
+  // A matrix number always wins the key outright, so a new one names the whole
+  // new key regardless of what the old one was. Clearing it drops the record
+  // back to an lk: key built from three fields, only one of which is in hand —
+  // not reconstructable, so left alone.
+  if (field === "matrix_number") return value ? `mx:${normKey(value)}` : null;
+
+  // Everything below only moves the key of a record that has NO matrix number.
+  if (!oldKey.startsWith("lk:")) return null;
+  const index = field === "label_number" ? 0 : field === "artist" ? 1 : field === "title" ? 2 : -1;
+  if (index < 0) return null;
+
+  // A value containing the separator would split into the wrong number of
+  // pieces; rebuilding from that would produce a key for some other record.
+  const parts = oldKey.slice(3).split("|");
+  if (parts.length !== 3) return null;
+  parts[index] = normKey(value);
+  return `lk:${parts.join("|")}`;
+}
+
 export interface GlobalLogEntry extends LogEntry {
   /** The record's id as it was when the change was made. Kept only as a
    * fallback: see live_record_id. */
@@ -725,6 +772,10 @@ export interface GlobalLogEntry extends LogEntry {
    * stale precisely for the records that have been worked on. Resolved
    * through record_key, which is content-derived and does survive. */
   live_record_id: number | null;
+  /** The record's permanent catalogue number (lib/recordNumbers.ts), for
+   * showing instead of the row id. Null where the record has no number yet —
+   * the caller falls back to the id rather than showing nothing. */
+  live_record_number: number | null;
 }
 
 /** Which slice of the log to show. The compiler works through it in review
@@ -766,7 +817,12 @@ export async function getGlobalLog(
   });
   const rows = res.rows as unknown as (GlobalLogEntry & { record_key: string | null })[];
   const live = await resolveLiveRecordIds(rows);
-  const entries = rows.map((r, i) => ({ ...r, live_record_id: live[i] }));
+  const numbers = await getNumbersForRecordIds(live.filter((n): n is number => n != null));
+  const entries = rows.map((r, i) => ({
+    ...r,
+    live_record_id: live[i],
+    live_record_number: live[i] == null ? null : (numbers.get(live[i]) ?? null),
+  }));
 
   return {
     entries,
@@ -787,7 +843,12 @@ export async function getGlobalLog(
  * renamed in a way that changed its key) and resolves to null rather than to a
  * confidently wrong link. */
 async function resolveLiveRecordIds(
-  rows: { record_key: string | null; record_id: number | null }[]
+  rows: {
+    record_key: string | null;
+    record_id: number | null;
+    field?: string | null;
+    new_value?: string | null;
+  }[]
 ): Promise<(number | null)[]> {
   const client = await getClient();
   const out: (number | null)[] = rows.map(() => null);
@@ -841,6 +902,56 @@ async function resolveLiveRecordIds(
       const id = rows[i].record_id as number;
       // Only accept the stored id if the row still there is the same record.
       if (keyById.get(id) === rows[i].record_key) out[i] = id;
+    }
+  }
+
+  // Third pass: the record's KEY moved, because the change being logged is what
+  // moved it. See movedKeyFor — the new key is rebuilt from the recorded
+  // old -> new value, not guessed. Without this, correcting a matrix number
+  // permanently orphans that record's whole history the moment the compiler
+  // makes the same correction in his spreadsheet.
+  const moved = new Map<string, string>(); // old key -> candidate new key
+  rows.forEach((r, i) => {
+    if (out[i] != null || !r.record_key || moved.has(r.record_key)) return;
+    const candidate = movedKeyFor(r.record_key, r.field, r.new_value);
+    if (candidate && candidate !== r.record_key) moved.set(r.record_key, candidate);
+  });
+
+  if (moved.size > 0) {
+    const candidates = [...new Set(moved.values())];
+    try {
+      const res = await client.execute({
+        sql: `SELECT id, record_key FROM records
+               WHERE record_key IN (${candidates.map(() => "?").join(", ")})`,
+        args: candidates,
+      });
+      // Count per key, because only an unambiguous landing counts. Two records
+      // answering to the reconstructed key means the catalogue cannot say which
+      // one the history belongs to, and a confidently wrong link is worse than
+      // the dash it replaces.
+      const hits = new Map<string, number[]>();
+      for (const r of res.rows) {
+        const rr = r as unknown as { id: number; record_key: string };
+        const list = hits.get(rr.record_key);
+        if (list) list.push(Number(rr.id));
+        else hits.set(rr.record_key, [Number(rr.id)]);
+      }
+      const resolvedByOldKey = new Map<string, number>();
+      for (const [oldKey, newKey] of moved) {
+        const ids = hits.get(newKey);
+        if (ids && ids.length === 1) resolvedByOldKey.set(oldKey, ids[0]);
+      }
+      // Applied to EVERY unresolved entry sharing that old key, not just the one
+      // that named the move: once the record is found, its earlier history — the
+      // edits made before the key moved — is reachable again too.
+      rows.forEach((r, i) => {
+        if (out[i] != null || !r.record_key) return;
+        const hit = resolvedByOldKey.get(r.record_key);
+        if (hit != null) out[i] = hit;
+      });
+    } catch {
+      // No record_key column (a restored older generation). The two passes
+      // above already ran; leave the rest as dashes rather than erroring.
     }
   }
 

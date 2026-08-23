@@ -198,3 +198,40 @@ export const getRecordIdByNumber = unstable_cache(
   ["record-id-by-number"],
   { tags: [CATALOGUE_TAG], revalidate: 3600 }
 );
+
+/** Catalogue numbers for a batch of live row ids, as id -> number.
+ *
+ * For lists that already know which records they're pointing at and need to
+ * NAME them — the modification log, most of all. A raw row id is not a name:
+ * it changes whenever the record is corrected, so a number written down from
+ * that list stops meaning anything. The catalogue number is the stable one,
+ * and it's the same number shown on the record's own page, so the two can
+ * finally be cross-referenced.
+ *
+ * Missing ids simply don't appear in the map — a record numbered after the
+ * next import, or before the first assignment run, has no number yet and the
+ * caller falls back rather than inventing one. */
+export async function getNumbersForRecordIds(ids: number[]): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  const unique = [...new Set(ids.filter((n) => Number.isFinite(n)))];
+  if (unique.length === 0) return out;
+  try {
+    await ensureRecordNumbersTable();
+    const client = await getClient();
+    const res = await client.execute({
+      sql: `SELECT r.id AS id, n.number AS number
+              FROM records r
+              JOIN ${TABLE} n ON n.record_key = r.record_key
+             WHERE r.id IN (${unique.map(() => "?").join(", ")})`,
+      args: unique,
+    });
+    for (const row of res.rows) {
+      const rr = row as unknown as { id: number; number: number };
+      out.set(Number(rr.id), Number(rr.number));
+    }
+  } catch {
+    // No numbers table yet, or no record_key column — the caller shows the
+    // fallback. A missing catalogue number must never break the log.
+  }
+  return out;
+}
