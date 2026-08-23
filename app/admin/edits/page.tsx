@@ -78,7 +78,8 @@ export default async function EditsPage({
       <p className="font-body text-sm text-ink-soft mb-6">
         Every field correction made on the site (including approved typo fixes) is stored here
         permanently, so it survives &mdash; and is re-applied on top of &mdash; each of dad&rsquo;s
-        spreadsheet uploads. <strong>Base</strong> is dad&rsquo;s value when the correction was made:
+        spreadsheet uploads. <strong>Base</strong>{" "}
+        is dad&rsquo;s value when the correction was made:
         while his upload still matches it, the correction wins; if he later changes that field to
         something genuinely new, his new value wins instead. Removing an override reverts the field
         to dad&rsquo;s value.
