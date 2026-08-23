@@ -4,6 +4,7 @@ import { EDITABLE_FIELDS, type LogEntry } from "@/lib/editor/overlay";
 import EditorRecordForm from "./EditorRecordForm";
 import { hasFlipSide } from "@/lib/editor/flipSide";
 import type { StubMismatch } from "@/lib/releaseGroup";
+import type { BSideEntry } from "@/lib/queries/bSideEntry";
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -36,6 +37,7 @@ export default function EditorPanel({
   log,
   editorName,
   mismatches = [],
+  bSideEntry = null,
 }: {
   record: RecordDetail;
   log: LogEntry[];
@@ -44,6 +46,10 @@ export default function EditorPanel({
    * record its numbers differently. Reported only — never corrected
    * automatically; see findStubMismatches. */
   mismatches?: StubMismatch[];
+  /** The entry this record's B side has in its own right, when the catalogue
+   * can name exactly one. Null when there is none, when more than one could be
+   * meant, or when the feature is switched off — see findBSideEntry. */
+  bSideEntry?: BSideEntry | null;
 }) {
   const values: Partial<Record<string, string | null>> = {};
   for (const f of EDITABLE_FIELDS) values[f] = record[f as keyof RecordDetail] as string | null;
@@ -136,11 +142,45 @@ export default function EditorPanel({
         </Link>
       </p>
 
+      {/* The B side's own entry, when it has one. The six B-side columns carry
+          no year, producer, riddim or genre, so a correction to any of those
+          belongs on the flip side's own entry — this is the way there.
+
+          The entry is named in full rather than linked behind "the B-side",
+          for the same reason /admin/matrix shows the pressing on every row:
+          the pairing is derived from the data, so it should be checkable at a
+          glance instead of taken on trust. */}
+      {bSideEntry && (
+        <p className="font-body text-sm mb-2">
+          <Link
+            href={`/records/${bSideEntry.id}`}
+            className="text-link hover:text-rasta-red underline"
+          >
+            &rarr; Open the B-side&rsquo;s own entry
+          </Link>
+          <span className="text-ink-soft">
+            {" "}
+            &mdash;{" "}
+            {[bSideEntry.artist?.trim(), bSideEntry.title?.trim()].filter(Boolean).join(" \u2013 ") ||
+              `entry ${bSideEntry.id}`}
+            {bSideEntry.label_number?.trim() ? ` (${bSideEntry.label_number.trim()})` : ""}, where
+            its year, producer, riddim and genre live.
+          </span>
+        </p>
+      )}
+
       {/* The B side only gets six columns, so a flip side that deserves its own
           producer, riddim or genre has to become its own entry — the compiler's
           own convention, and what pairs of entries on a 12" already look like.
-          Offered here because this is where an editor discovers the limit. */}
-      {hasFlipSide(record) && (
+          Offered here because this is where an editor discovers the limit.
+
+          Withheld when the B side already HAS an entry (the link above): the
+          two offers otherwise contradict each other on the same screen — one
+          says the producer and riddim live over there, the next offers to make
+          somewhere for them — and taking the second would enter the song a
+          third time. Nothing is lost if the match above is ever wrong, since
+          "Add a new track" is still right there. */}
+      {hasFlipSide(record) && !bSideEntry && (
         <p className="font-body text-sm mb-4">
           <Link href={`/records/new?flip=${record.id}`} className="text-link hover:text-rasta-red">
             + Give the B-side its own entry

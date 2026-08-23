@@ -14,6 +14,7 @@ import { getClient } from "@/lib/db/client";
 
 export const FLAG_RELEASE_GROUPING = "release_grouping";
 export const FLAG_RECORD_NUMBERS = "record_numbers";
+export const FLAG_BSIDE_ENTRY_LINK = "bside_entry_link";
 
 /** Every switch, with the default applied when it has never been set, and the
  * wording the admin page shows. Defaults are ON: a switch exists to turn a
@@ -37,6 +38,14 @@ export const FLAGS: Record<
       "Shows a permanent RKR number on each entry, so a reader can quote one entry precisely. /records/RKR-000123 also opens that entry.",
     whenOff:
       "Entries show no catalogue number and an RKR-000123 address stops resolving. Numbers already handed out are kept, not discarded, so turning this back on restores the same numbers.",
+    default: true,
+  },
+  [FLAG_BSIDE_ENTRY_LINK]: {
+    label: "B-side shortcut for editors",
+    description:
+      "When a record's B side has an entry of its own, shows editors a link straight to it — so a correction that belongs on that song (a year, a producer) can be made without searching for it.",
+    whenOff:
+      "Editors see no such link and find the B side's own entry by searching, as before. Nothing about the records themselves changes.",
     default: true,
   },
 };

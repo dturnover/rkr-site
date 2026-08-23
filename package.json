@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "import": "tsx scripts/import-csv.ts",
-    "rebuild-catalog-fts": "tsx scripts/rebuild-catalog-fts.ts"
+    "rebuild-catalog-fts": "tsx scripts/rebuild-catalog-fts.ts",
+    "test:bside-entry": "tsx scripts/test-bside-entry.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",

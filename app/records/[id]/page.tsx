@@ -11,6 +11,7 @@ import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
 import { deriveReleaseBase, findStubMismatches, getReleaseSiblings } from "@/lib/releaseGroup";
 import ReleaseTracks from "@/components/ReleaseTracks";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { findBSideEntry } from "@/lib/queries/bSideEntry";
 import { getRecordIdByNumber, getRecordNumberByKey, parseRecordNumber } from "@/lib/recordNumbers";
 import { FLAG_RECORD_NUMBERS, isEnabled } from "@/lib/settings";
 
@@ -177,6 +178,21 @@ export default async function RecordPage({
 
   const session = await getSession();
   const isEditor = !!session;
+  // The B side's own entry, when it has one. Looked up only for signed-in
+  // editors: it exists to shorten "I need to fix the year on this flip side",
+  // which is an editing job, and keeping it off the public path leaves the
+  // most-crawled page in the site at exactly the query count it had before.
+  const bSideEntry = isEditor
+    ? await findBSideEntry({
+        id: record.id,
+        b_side_artist: record.b_side_artist,
+        b_side_title: record.b_side_title,
+        label: record.label,
+        country: record.country,
+        format: record.format,
+        year: record.year,
+      })
+    : null;
   const log = isEditor ? await getRecordLog(computeRecordKey(record)) : [];
   // Where a paired entry's stub disagrees with this entry. Admin only: the
   // compiler judged this too fine-grained to put in front of editors, who
@@ -255,6 +271,7 @@ export default async function RecordPage({
             log={log}
             editorName={session.name}
             mismatches={mismatches}
+            bSideEntry={bSideEntry}
           />
         </div>
       )}
