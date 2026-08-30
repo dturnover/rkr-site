@@ -103,11 +103,16 @@ export default function TrackDetailCard({
           ) : (
             "Untitled"
           )}
-          {record.title_credit ? (
-            <span className="text-ink-soft italic text-base"> ({record.title_credit})</span>
-          ) : null}
         </h3>
         <dl>
+          {/* Title Credit is a labelled row, and is filtered by
+              creditIfDifferent, for the same reasons Artist Credit is: the two
+              are the same kind of field and the results table already lists
+              them side by side. As a parenthetical glued to the heading it was
+              shown even when it only repeated the title, which is the noise
+              creditIfDifferent exists to remove. Placed first so it stays next
+              to the title it qualifies. */}
+          <Field label="Title Credit" value={creditIfDifferent(record.title_credit, record.title)} />
           <Field label="Artist" value={record.artist} facet="artists" />
           <Field label="Artist Credit" value={creditIfDifferent(record.artist_credit, record.artist)} />
           <Field label="Country" value={record.country} facet="countries" />
@@ -146,11 +151,12 @@ export default function TrackDetailCard({
             ) : (
               "Untitled"
             )}
-            {record.b_side_title_credit ? (
-              <span className="text-ink-soft italic text-base"> ({record.b_side_title_credit})</span>
-            ) : null}
           </h3>
           <dl>
+            <Field
+              label="Title Credit"
+              value={creditIfDifferent(record.b_side_title_credit, record.b_side_title)}
+            />
             <Field label="Artist" value={record.b_side_artist} facet="artists" />
             <Field
               label="Artist Credit"
