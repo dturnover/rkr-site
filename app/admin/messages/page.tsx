@@ -8,6 +8,22 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
 };
 
+// Replying opens Gmail's web compose rather than a mailto: link.
+//
+// mailto: hands off to whatever the operating system has registered as the
+// default mail application, which on the compiler's machine is Outlook — an
+// account he doesn't use for RKR. Nothing the site can set changes that
+// default; the only way to choose the client from here is to link to it
+// directly.
+//
+// Both people who read this page work out of Gmail. If that ever stops being
+// true, this is the one place to change.
+function gmailComposeHref(email: string, name: string | null): string {
+  const subject = `Re: your message to Roots Knotty Roots${name?.trim() ? `, ${name.trim()}` : ""}`;
+  const params = new URLSearchParams({ view: "cm", fs: "1", to: email, su: subject });
+  return `https://mail.google.com/mail/?${params.toString()}`;
+}
+
 export default async function MessagesPage() {
   const session = await getSession();
   if (!session) redirect("/admin");
@@ -42,7 +58,10 @@ export default async function MessagesPage() {
                 <div className="font-body text-sm">
                   <span className="text-ink font-semibold">{m.name}</span>{" "}
                   <a
-                    href={`mailto:${m.email}`}
+                    href={gmailComposeHref(m.email, m.name)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Opens a Gmail reply in a new tab, addressed to this sender"
                     className="text-link underline hover:text-rasta-red break-all"
                   >
                     &lt;{m.email}&gt;
