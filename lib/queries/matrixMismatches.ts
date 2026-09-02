@@ -1,6 +1,5 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
 // A worklist of songs whose matrix number is recorded one way on their own
 // entry and another way where they appear as somebody else's B side.
@@ -240,10 +239,20 @@ export async function findMatrixMismatchesUncached(): Promise<{
   };
 }
 
-// The join reads the whole catalogue, so hold the result until an upload or an
-// edit changes something rather than recomputing it per page view.
+// Held for a day, and DELIBERATELY NOT tagged with CATALOGUE_TAG.
+//
+// This is the most expensive query the site can run: a self-join of the
+// catalogue against itself, worst case on the order of a hundred thousand
+// squared row reads. Tagging it meant every editor correction, every deletion
+// and every upload dropped the cached answer, so the next visit re-ran the
+// whole join — and this page is visited precisely while working through
+// corrections. That combination is what read tens of billions of rows in a
+// month against thirty thousand page views.
+//
+// A worklist a day old is no worse for its purpose, and the page offers an
+// explicit re-run when a fresh answer is actually wanted.
 export const findMatrixMismatches = unstable_cache(
   findMatrixMismatchesUncached,
   ["matrix-mismatches"],
-  { tags: [CATALOGUE_TAG], revalidate: 3600 }
+  { revalidate: 86_400 }
 );

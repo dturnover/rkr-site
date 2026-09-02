@@ -88,8 +88,15 @@ export default async function MatrixMismatchPage({
   if (!session) redirect("/admin");
   if (session.role !== "admin") redirect("/admin");
 
-  const showDismissed = first((await searchParams).view) === "dismissed";
-  const { rows, capped, dismissedCount } = await findMatrixMismatches();
+  const sp = await searchParams;
+  const showDismissed = first(sp.view) === "dismissed";
+  // Only run the join when asked. Landing on this page — or refreshing it
+  // after a correction — must not be able to trigger the single most expensive
+  // query in the application.
+  const run = first(sp.run) === "1";
+  const { rows, capped, dismissedCount } = run
+    ? await findMatrixMismatches()
+    : { rows: [], capped: false, dismissedCount: 0 };
   const dismissed = showDismissed ? await listDismissedPairs() : [];
 
   return (
@@ -108,7 +115,25 @@ export default async function MatrixMismatchPage({
         &mdash; open either entry to correct it.
       </p>
 
-      {dismissedCount > 0 && (
+      {!run && !showDismissed && (
+        <section className="frame-double bg-paper p-6">
+          <p className="font-body text-ink mb-4">
+            Building this list compares every record against every other one, which is by far
+            the heaviest thing the site does &mdash; so it only runs when you ask for it.
+          </p>
+          <Link
+            href="/admin/matrix?run=1"
+            className="inline-block px-5 py-2 bg-frame text-paper font-body tracking-wide hover:bg-rasta-red transition-colors"
+          >
+            Run the check
+          </Link>
+          <p className="font-body text-xs text-ink-soft mt-3">
+            The answer is kept for a day, so coming back to it is free.
+          </p>
+        </section>
+      )}
+
+      {run && dismissedCount > 0 && (
         <p className="font-body text-sm mb-4">
           <Link
             href={showDismissed ? "/admin/matrix" : "/admin/matrix?view=dismissed"}
@@ -160,7 +185,7 @@ export default async function MatrixMismatchPage({
             </tbody>
           </table>
         </div>
-      ) : rows.length === 0 ? (
+      ) : !run ? null : rows.length === 0 ? (
         <section className="frame-double bg-paper p-6">
           <p className="font-body text-ink">
             No divergences found. Every song carrying a matrix number on its own entry matches the
