@@ -139,6 +139,12 @@ export default function ResultsTable({
                       <Link
                         prefetch={false}
                         href={sortLink(searchParams, col.key, sort, dir)}
+                        // A sorted view is the same rows in another order, and
+                        // sorting a large facet is a full table sort. Left
+                        // followable, crawlers walk every column x direction
+                        // for every facet value — billions of rows read for
+                        // pages nobody should index.
+                        rel="nofollow"
                         className="text-ink hover:text-rasta-red"
                       >
                         {col.label}

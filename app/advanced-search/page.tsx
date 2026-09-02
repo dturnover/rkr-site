@@ -3,6 +3,7 @@ import ResultsTable from "@/components/ResultsTable";
 import { advancedSearch, hasAnyField, type AdvancedSearchFields } from "@/lib/queries/search";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { reorderedViewMetadata } from "@/lib/reorderedView";
 import { allowSearch } from "@/lib/searchThrottle";
 
 // Single-field substring LIKE scans (no compound/trigram index available yet)
@@ -25,6 +26,14 @@ const FIELD_NAMES: (keyof AdvancedSearchFields)[] = [
   "origin",
   "notes",
 ];
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<RawSearchParams>;
+}) {
+  return reorderedViewMetadata(await searchParams, "/advanced-search");
+}
 
 export default async function AdvancedSearchPage({
   searchParams,

@@ -233,6 +233,15 @@ const AI_CRAWLERS = [
 // which is what actually keeps them out of search results if a URL leaks.
 const PRIVATE_PATHS = ["/admin", "/api/", "/mod-log", "/records/new"];
 
+// Sorted and paginated views of the SAME rows. Every sortable column header
+// is a distinct URL, and sorting a large facet is a full table sort — tens of
+// thousands of rows read, uncacheable across crawlers because each URL is
+// fetched once. Left crawlable these cost far more in database reads than the
+// catalogue itself, and they are duplicate content Google does not want
+// indexed anyway. The records, browse indexes and facet pages themselves stay
+// fully open; only the re-orderings of them are refused.
+const REORDERED_VIEWS = ["/*?sort=", "/*?dir=", "/*?page=", "/search?"];
+
 // Crawlers that put the catalogue in front of people looking for it. Exempt
 // from the Crawl-delay applied to everything else — slowing these down only
 // slows down how much of the discography is findable. Prefix matching means
@@ -277,7 +286,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       {
         userAgent: SEARCH_CRAWLERS,
         allow: "/",
-        disallow: PRIVATE_PATHS,
+        disallow: [...PRIVATE_PATHS, ...REORDERED_VIEWS],
       },
       // Everything else: still allowed, but asked to space its requests out.
       // This is aimed at the long tail of SEO tools, monitors and small
@@ -293,7 +302,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       {
         userAgent: "*",
         allow: "/",
-        disallow: PRIVATE_PATHS,
+        disallow: [...PRIVATE_PATHS, ...REORDERED_VIEWS],
         crawlDelay: 1,
       },
       {

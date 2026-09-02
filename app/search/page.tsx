@@ -2,6 +2,7 @@ import ResultsTable from "@/components/ResultsTable";
 import { keywordSearch, advancedSearch, type AdvancedSearchFields } from "@/lib/queries/search";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { reorderedViewMetadata } from "@/lib/reorderedView";
 import { allowSearch } from "@/lib/searchThrottle";
 import { checkCrawlGuard, RESULTS_PAGE_WEIGHT, type GuardVerdict } from "@/lib/crawlGuard";
 import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
@@ -29,6 +30,14 @@ const FIELD_LABELS: Record<keyof AdvancedSearchFields, string> = {
 
 function isAdvancedField(value: string): value is keyof AdvancedSearchFields {
   return Object.prototype.hasOwnProperty.call(FIELD_LABELS, value);
+}
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<RawSearchParams>;
+}) {
+  return reorderedViewMetadata(await searchParams, "/search");
 }
 
 export default async function SearchPage({

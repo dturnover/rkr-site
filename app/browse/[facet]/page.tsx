@@ -3,8 +3,20 @@ import FacetBrowseIndex from "@/components/FacetBrowseIndex";
 import { FACETS, isFacetSlug } from "@/lib/facetConfig";
 import { getFacetIndex, isValidLetter } from "@/lib/queries/browse";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { reorderedViewMetadata } from "@/lib/reorderedView";
 
 export const maxDuration = 300;
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ facet: string }>;
+  searchParams: Promise<RawSearchParams>;
+}) {
+  const { facet } = await params;
+  return reorderedViewMetadata(await searchParams, `/browse/${facet}`);
+}
 
 export default async function FacetIndexPage({
   params,

@@ -5,6 +5,7 @@ import { FACETS, isFacetSlug } from "@/lib/facetConfig";
 import { getFacetValueRows } from "@/lib/queries/browse";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import { reorderedViewMetadata } from "@/lib/reorderedView";
 import { checkCrawlGuard, RESULTS_PAGE_WEIGHT } from "@/lib/crawlGuard";
 import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
 
@@ -13,6 +14,17 @@ import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
 // facet value (e.g. a country with 70k+ tracks) forces a full sort that can
 // take tens of seconds on the current Turso database.
 export const maxDuration = 300;
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ facet: string; value: string }>;
+  searchParams: Promise<RawSearchParams>;
+}) {
+  const { facet, value } = await params;
+  return reorderedViewMetadata(await searchParams, `/browse/${facet}/${value}`);
+}
 
 export default async function FacetValuePage({
   params,
