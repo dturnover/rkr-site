@@ -135,9 +135,15 @@ async function getFacetValueRowsUncached(
   const total = Number(totalRes.rows[0]?.c ?? 0);
   const { clause } = buildOrderClause(opts.sort, opts.dir, total);
 
+  // Clamp to the last page that actually holds rows. Without this a request
+  // for page 9,000 of a 700-page facet still made the database walk the whole
+  // offset to return nothing — a free way to make it do maximum work.
+  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const safePage = Math.min(page, lastPage);
+
   const rowsRes = await client.execute({
     sql: `SELECT ${RESULT_COLUMNS} FROM records WHERE ${whereClause} ${clause} LIMIT ? OFFSET ?`,
-    args: [...args, PAGE_SIZE, (page - 1) * PAGE_SIZE],
+    args: [...args, PAGE_SIZE, (safePage - 1) * PAGE_SIZE],
   });
 
   let label = value === UNKNOWN_VALUE ? "Unknown" : value;

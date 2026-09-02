@@ -85,23 +85,40 @@ export const ALPHA_SORT_THRESHOLD = 5000;
 // showed none, because the error was being caught and turned into an empty
 // result set. Sorting by artist/year never broke, since those map to
 // artist_norm/year_sort, which the FTS table has no column for.
+// An explicit column sort on a large result set is the most expensive query
+// the site can be asked for: the sort column is unindexed, so the database
+// reads and orders every matching row — tens of thousands of them — and the
+// answer cannot be reused because the URL carries the sort, the direction and
+// the page. Every sortable header multiplies the number of such URLs on offer.
+//
+// Above this many rows the sort is refused and the default indexed order is
+// used instead. That is not much of a loss: sorting 20,000 records leaves 200
+// pages to page through, so nobody is finding anything that way. It is the
+// only protection that holds against a caller who ignores robots.txt, since it
+// caps what the database can be made to do rather than who may ask.
+export const MAX_SORTABLE_ROWS = 20_000;
+
 export function buildOrderClause(
   sort: string | undefined,
   dir: string | undefined,
   total?: number,
   prefix = ""
 ) {
-  if (!isSortKey(sort ?? "")) {
+  // Too large to sort: fall through to the default indexed order below.
+  const tooLargeToSort = total !== undefined && total > MAX_SORTABLE_ROWS;
+  if (!isSortKey(sort ?? "") || tooLargeToSort) {
     if (total !== undefined && total <= ALPHA_SORT_THRESHOLD) {
       return {
         sortKey: "artist" as const,
         direction: "ASC" as const,
+        sortRefused: tooLargeToSort,
         clause: `ORDER BY (${prefix}artist_norm IS NULL) ASC, ${prefix}artist_norm ASC`,
       };
     }
     return {
       sortKey: "id" as const,
       direction: "ASC" as const,
+      sortRefused: tooLargeToSort,
       clause: `ORDER BY ${prefix}id ASC`,
     };
   }
@@ -112,6 +129,7 @@ export function buildOrderClause(
   return {
     sortKey,
     direction: direction as "ASC" | "DESC",
+    sortRefused: false,
     clause: `ORDER BY (${column} IS NULL) ASC, ${column} ${direction}`,
   };
 }
