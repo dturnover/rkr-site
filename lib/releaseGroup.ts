@@ -113,12 +113,66 @@ function hasMultiSideMarker(labelNumbers: (string | null)[]): boolean {
   return labelNumbers.some((ln) => (sideMarkerNumber(ln) ?? 0) >= 2);
 }
 
-// LIKE treats these as wildcards, so a label number containing one would match
-// far more than it should. Escaped with a character that can't appear in a
-// catalogue number.
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+// The index that makes the sibling lookup a seek instead of a scan.
+//
+// This lookup used to be written as `label_number LIKE 'gred 266%'`, which
+// LOOKS index-friendly — a prefix pattern with no leading wildcard is exactly
+// the shape SQLite's LIKE optimisation is for. It never fired, for two
+// independent reasons:
+//
+//   1. The pattern carried an `ESCAPE '\'` clause (added so a `%` or `_`
+//      inside a catalogue number couldn't act as a wildcard). SQLite disables
+//      the LIKE optimisation outright whenever ESCAPE is present.
+//   2. LIKE is case-insensitive by default, so it can only use an index whose
+//      collation is NOCASE. The import builds a plain BINARY index on
+//      label_number, so even without the ESCAPE clause the optimisation
+//      wouldn't have applied.
+//
+// The result was a full table scan — ~135,000 rows read — on EVERY view of a
+// record whose catalogue number carries a side marker. Turso's query insights
+// caught it at 68.1 million rows read across 502 executions, by far the most
+// expensive statement on the site.
+//
+// A range scan over a normalised expression needs no escaping (the bounds are
+// literal values, not a pattern) and no case folding at match time (the index
+// stores the folded form), so it is always usable.
+//
+// Created on demand rather than during import, for the same reason as the
+// matrix report's index: a full import builds a fresh table and renames the old
+// one, and SQLite renames tables but NOT their indexes — so the name can
+// survive attached to the previous generation. PRAGMA tells us whether the LIVE
+// table has it; the stale one is dropped before rebuilding.
+const INDEX_NAME = "idx_records_label_number_norm";
+const INDEX_EXPR = "lower(trim(label_number))";
+
+let indexEnsured: Promise<void> | null = null;
+
+function ensureIndex(): Promise<void> {
+  if (!indexEnsured) {
+    indexEnsured = (async () => {
+      const client = await getClient();
+      const list = await client.execute(`PRAGMA index_list(records)`);
+      const present = list.rows.some(
+        (r) => String((r as unknown as { name: string }).name) === INDEX_NAME
+      );
+      if (present) return;
+      await client.execute(`DROP INDEX IF EXISTS ${INDEX_NAME}`);
+      await client.execute(`CREATE INDEX ${INDEX_NAME} ON records(${INDEX_EXPR})`);
+    })().catch((err) => {
+      // Left unmemoised on failure so the next request tries again. The query
+      // below is correct with or without the index, only slower, so a failure
+      // here must not stop the page rendering.
+      indexEnsured = null;
+      throw err;
+    });
+  }
+  return indexEnsured;
 }
+
+// Above every valid UTF-8 string, so `>= key AND < key + UPPER_BOUND` is
+// exactly the set of strings beginning with `key`. U+10FFFF is the highest
+// code point there is, so nothing sorts past it.
+const UPPER_BOUND = "\u{10FFFF}";
 
 // A 12" or EP runs to three or four sides — six at the very outside. If far
 // more than that share a base number, the number is being reused rather than
@@ -127,10 +181,11 @@ const MAX_GROUP = 6;
 
 /** Other rows belonging to the same physical release as this one.
  *
- * Matched on a label-number prefix, which an index can serve (no leading
- * wildcard), then filtered exactly in JavaScript — the prefix alone would also
- * catch "GRED 2660" when looking for "GRED 266". The label has to agree too,
- * since catalogue numbers are only unique within a label. */
+ * Matched on a label-number prefix — expressed as a range over the normalised
+ * column so an index can serve it (see INDEX_NAME above) — then filtered
+ * exactly in JavaScript, since the prefix alone would also catch "GRED 2660"
+ * when looking for "GRED 266". The label has to agree too, since catalogue
+ * numbers are only unique within a label. */
 export interface ReleaseAnchor {
   id: number;
   label_number: string | null;
@@ -145,17 +200,25 @@ export async function findReleaseSiblings(anchor: ReleaseAnchor): Promise<Releas
   const key = releaseKeyOf(labelNumber);
   if (!key) return [];
 
+  // A missing index only costs speed, never correctness, so a failure to build
+  // it must not take the record page down with it.
+  try {
+    await ensureIndex();
+  } catch {
+    // fall through and run the query unindexed
+  }
+
   const client = await getClient();
   const res = await client.execute({
     sql: `SELECT id, label_number, artist, title, matrix_number,
                  b_side_artist, b_side_title, b_side_label_number,
                  b_side_matrix_number, format, year
           FROM records
-          WHERE label_number LIKE ? ESCAPE '\\'
+          WHERE ${INDEX_EXPR} >= ? AND ${INDEX_EXPR} < ?
             AND id <> ?
             AND (label IS ? OR lower(trim(label)) = lower(trim(?)))
           LIMIT 60`,
-    args: [`${escapeLike(key)}%`, recordId, label, label ?? ""],
+    args: [key, `${key}${UPPER_BOUND}`, recordId, label, label ?? ""],
   });
 
   const group = (res.rows as unknown as ReleaseSibling[]).filter(
