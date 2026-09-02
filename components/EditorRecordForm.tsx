@@ -10,6 +10,7 @@ const A_SIDE: FieldDef[] = [
   { name: "country", label: "Country" },
   { name: "year", label: "Year Released" },
   { name: "format", label: "Format" },
+  { name: "pressing", label: "Issue Notes (pre / reissue)" },
   { name: "label", label: "Label" },
   { name: "label_number", label: "Label No." },
   { name: "matrix_number", label: "Matrix No." },

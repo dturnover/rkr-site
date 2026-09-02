@@ -190,6 +190,11 @@ function ensureOverlayTables(): Promise<void> {
 export const EDITABLE_FIELDS = [
   "artist", "artist_credit", "title", "title_credit",
   "matrix_number", "label_number", "label", "country", "format",
+  // Source column J, shown as "Issue Notes" — "pre", "reissue" and the like.
+  // It was displayed on the record page but missing from this list, so it was
+  // the one visible field an editor could read and not correct (reported by
+  // the compiler, who wanted to remove a "pre" and found nowhere to do it).
+  "pressing",
   "producer", "year", "riddim", "version", "genre", "notes",
   "song_origin", "additions",
   "b_side_artist", "b_side_artist_credit", "b_side_title",

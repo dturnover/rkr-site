@@ -313,10 +313,16 @@ export async function* streamTargetRows(
   const editable = new Set<string>(EDITABLE_FIELDS);
   const fieldEditsByKey = new Map<
     string,
-    { field: string; value: string; base: string | null; hasBase: boolean }[]
+    { field: string; value: string | null; base: string | null; hasBase: boolean }[]
   >();
   for (const e of fieldEdits) {
-    if (e.value == null || !editable.has(e.field)) continue;
+    // A null override value means the editor deliberately CLEARED the field,
+    // and that is a correction like any other. Skipping nulls here (as this
+    // once did) silently undid every such clear on the compiler's next upload:
+    // the override existed, was passed over, and his old value came straight
+    // back with no error and nothing in the log to explain it. Verified against
+    // a fixture — a cleared field came back unchanged before this line changed.
+    if (!editable.has(e.field)) continue;
     const entry = { field: e.field, value: e.value, base: e.base_value, hasBase: e.has_base };
     const list = fieldEditsByKey.get(e.record_key);
     if (list) list.push(entry);

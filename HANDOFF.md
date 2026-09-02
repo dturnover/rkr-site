@@ -43,7 +43,10 @@ Vercel Blob (4.5MB request limit) → server streams it. Streaming generators ke
 limit (210s apply budget per pass); atomic table swap with the previous generation kept
 for rollback; 10-deep import history.
 
-**3. Editor overlay** (`lib/editor/overlay.ts`). Every upload rebuilds the catalogue
+**3. Editor overlay** (`lib/editor/overlay.ts`). A `null` override value means the
+editor deliberately CLEARED the field and is applied like any other correction — the
+merge skipped nulls for a long time, which silently undid every clear on the next
+upload. See `scripts/test-cleared-fields.ts`. Every upload rebuilds the catalogue
 from Michael's spreadsheet, which would erase editor corrections. So overrides live in
 tables *outside* the swap set, keyed by a **content-derived record key**
 (`computeRecordKey`: matrix number, else label no + artist + title) because **row ids
@@ -147,9 +150,10 @@ twice is safe, and it reports how many it assigned.
   it along with everything else, and `"./lib/x.ts"`-style imports in a scratch script
   are exactly what it rejects. Keep throwaway scripts outside the repo, or delete them
   before building.
-- Two retained test suites, both for **derived** data where being confidently wrong is
-  worse than declining to answer: `npm run test:bside-entry` (14 cases) and
-  `npm run test:moved-key` (18 cases). They pin down what the strictness buys, so it
+- Three retained test suites: `npm run test:bside-entry` (14), `npm run test:moved-key`
+  (18) and `npm run test:cleared-fields` (6). The first two cover **derived** data where
+  being confidently wrong is worse than declining to answer; the third pins down that a
+  field cleared on the site stays cleared. They pin down what the strictness buys, so it
   isn't loosened later by someone who only notices it costs matches. There is no test
   runner otherwise — everything else is verified with a throwaway script and deleted.
 - Comments explain **why**, especially where a decision looks odd. That's the
