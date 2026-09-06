@@ -140,29 +140,6 @@ export async function getRecordNumberStats(): Promise<{ assigned: number; missin
   return { assigned, missing };
 }
 
-/** The catalogue number for a record, by its record_key. Returns null rather
- * than throwing if the table doesn't exist yet (a database that has never run
- * an import) — a missing number hides the line on the detail page, it does not
- * take the page down. */
-export const getRecordNumberByKey = unstable_cache(
-  async (recordKey: string): Promise<number | null> => {
-    if (!recordKey) return null;
-    try {
-      const client = await getClient();
-      const res = await client.execute({
-        sql: `SELECT number FROM ${TABLE} WHERE record_key = ? LIMIT 1`,
-        args: [recordKey],
-      });
-      const n = res.rows[0]?.number;
-      return n == null ? null : Number(n);
-    } catch {
-      return null;
-    }
-  },
-  ["record-number-by-key"],
-  { tags: [CATALOGUE_TAG], revalidate: 3600 }
-);
-
 /** The current row id for a catalogue number, for resolving /records/RKR-000123.
  *
  * Returns null when the number's record_key is no longer in the catalogue.
@@ -176,28 +153,39 @@ export const getRecordNumberByKey = unstable_cache(
  * which new record the orphaned number "really" means from artist/title/label —
  * would sometimes hand a reader a confidently wrong record, and in a reference
  * work a wrong answer is worse than a missing one. An orphaned number 404s. */
-export const getRecordIdByNumber = unstable_cache(
+const cachedIdByNumber = unstable_cache(
   async (n: number): Promise<number | null> => {
-    try {
-      const client = await getClient();
-      const res = await client.execute({
-        sql: `SELECT r.id AS id
-                FROM ${TABLE} n
-                JOIN records r ON r.record_key = n.record_key
-               WHERE n.number = ?
-               ORDER BY r.id
-               LIMIT 1`,
-        args: [n],
-      });
-      const id = res.rows[0]?.id;
-      return id == null ? null : Number(id);
-    } catch {
-      return null;
-    }
+    const client = await getClient();
+    const res = await client.execute({
+      sql: `SELECT r.id AS id
+              FROM ${TABLE} n
+              JOIN records r ON r.record_key = n.record_key
+             WHERE n.number = ?
+             ORDER BY r.id
+             LIMIT 1`,
+      args: [n],
+    });
+    const id = res.rows[0]?.id;
+    return id == null ? null : Number(id);
   },
   ["record-id-by-number"],
   { tags: [CATALOGUE_TAG], revalidate: 3600 }
 );
+
+export async function getRecordIdByNumber(n: number): Promise<number | null> {
+  // The catch is deliberately OUTSIDE the cached function. With it inside, a
+  // failed query returned null and unstable_cache stored that null for the full
+  // hour — so a transient database error would keep answering "no such record"
+  // long after the database recovered. That is exactly the wrong behaviour
+  // during the one event that causes transient errors here: a scrape burst
+  // pushing Turso into rate-limiting. Out here, a failure is just a failure and
+  // the next request tries again.
+  try {
+    return await cachedIdByNumber(n);
+  } catch {
+    return null;
+  }
+}
 
 /** Catalogue numbers for a batch of live row ids, as id -> number.
  *

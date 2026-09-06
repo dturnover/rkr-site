@@ -127,7 +127,7 @@ twice is safe, and it reports how many it assigned.
 | Bulk "revert all changes by this editor" on `/admin/edits` | Wanted before Markus gets a login. Confirmation with a count. Covers field overrides, created records, deletions. Data model already supports it — everything carries `editor_name`. |
 | Rotate `ADMIN_PASSWORD` in Vercel | **Oldest item, and now the most overdue.** `/admin` is linked publicly in the footer and the current value is known in old chat logs. |
 | Set `ADMIN_DISPLAY_NAME` = `Michael Turner` in Vercel | The bootstrap admin has no users row, so it's credited with whatever email he types at sign-in. |
-| Vercel Firewall rate rule on `/records/*` | ~100 req/min per IP, action **Challenge** not Deny. The app-level crawl guard is a speed bump; this is real enforcement. |
+| Vercel Firewall rate rule on `/records/*` | **Now the top item — this has actually happened.** Sep 5: a distributed scrape put ~87k requests on `/records/[id]` from thousands of residential IPs across many countries, each pulling different ids with real browser user-agents. It pushed Turso into 429 rate-limiting and produced a 5xx blip. `lib/crawlGuard.ts` did nothing about it and structurally cannot: it counts per IP, and this was a few requests per IP across thousands of them. A **Challenge** rule (not Deny) is the enforcement that works on this shape of traffic, and Vercel's verified-bot bypass keeps Googlebot in. Dashboard-only, so it needs a human. |
 | Six dropped Acknowledgements names | Roger Steffens and Penny Reel among them. Waiting on Michael. (Phil Etgart is done — he was already in the contributor list, just not on the editors line.) |
 | Catalogue number changes when a matrix number does | Same root cause as the log dashes above, still unfixed for *numbers*: correcting a matrix number moves the record's key, so it draws a fresh catalogue number and the old one 404s. The log now recovers from this; the numbers do not. See the two deferred rows above. |
 | Editor login for Phil Etgart | He is credited as a contributing editor now, but has no account. Needs his email; Michael can send the invite himself from `/admin`. Unclear whether he wants one. |
@@ -180,6 +180,16 @@ twice is safe, and it reports how many it assigned.
   does nothing. Check `PRAGMA index_list(records)`.
 - **`prefetch={false}` disables hover prefetching too** in the App Router. It's on for
   the sidebar and letter tabs, off for the 100-link result lists.
+- **A cached failure is worse than no cache.** Put the try/catch OUTSIDE
+  `unstable_cache`, never inside. With it inside, a failed query returns null and
+  that null is stored for the full revalidate window — so one transient error keeps
+  answering "not found" long after the database recovers, which is precisely the
+  wrong behaviour during the scrape bursts that cause transient errors. Bit
+  `getRecordIdByNumber`; `findBSideEntry` has it the right way round.
+- **Count the queries on `/records/[id]` before adding one.** It is the most
+  requested route in the site by two orders of magnitude and the one a scrape
+  walks, so every extra round trip there is multiplied by ~87k during an event.
+  The catalogue number rides along on `getRecordById`'s own SELECT for that reason.
 - **Never rate-limit Googlebot.** `lib/crawlGuard.ts` exempts search engines before
   counting and fails open. Indexing is the whole competitive advantage.
 - **Michael's data is inconsistent by his own account** — partial matrix numbers in the

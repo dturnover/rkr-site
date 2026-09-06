@@ -12,7 +12,7 @@ import { deriveReleaseBase, findStubMismatches, getReleaseSiblings } from "@/lib
 import ReleaseTracks from "@/components/ReleaseTracks";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import { findBSideEntry } from "@/lib/queries/bSideEntry";
-import { getRecordIdByNumber, getRecordNumberByKey, parseRecordNumber } from "@/lib/recordNumbers";
+import { getRecordIdByNumber, parseRecordNumber } from "@/lib/recordNumbers";
 import { FLAG_RECORD_NUMBERS, isEnabled } from "@/lib/settings";
 
 // `back` comes from a URL query param, so it's untrusted input even though
@@ -173,7 +173,7 @@ export default async function RecordPage({
   // placeholder — a record imported before numbering shipped, or added since
   // the last import, has no number yet and shouldn't claim one.
   const catalogueNumber = (await isEnabled(FLAG_RECORD_NUMBERS))
-    ? await getRecordNumberByKey(record.record_key || computeRecordKey(record))
+    ? (record.catalogue_number ?? null)
     : null;
 
   const session = await getSession();

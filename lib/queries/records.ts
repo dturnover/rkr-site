@@ -11,6 +11,10 @@ export interface RecordDetail {
   // or matrix number would change what computeRecordKey returns, but the row
   // stays pinned to the key the overlay filed it under (see setFieldEdit).
   record_key: string | null;
+  /** The permanent catalogue number (lib/recordNumbers.ts), joined in here so a
+   * record view costs one query rather than two. Null when the record has no
+   * number yet. */
+  catalogue_number: number | null;
   artist: string | null;
   artist_credit: string | null;
   title: string | null;
@@ -45,18 +49,43 @@ export interface RecordDetail {
 export const getRecordById = unstable_cache(
   async (id: number): Promise<RecordDetail | null> => {
     const client = await getClient();
-    const res = await client.execute({
-      sql: `SELECT id, record_key, artist, artist_credit, title, title_credit, matrix_number, label_number,
-                   label, country, format, pressing, producer, year, riddim, version, genre, notes,
-                   song_origin, additions, b_side_artist, b_side_artist_credit, b_side_title,
-                   b_side_title_credit, b_side_matrix_number, b_side_label_number
-            FROM records WHERE id = ? LIMIT 1`,
-      args: [id],
-    });
-    if (res.rows.length === 0) return null;
-    return res.rows[0] as unknown as RecordDetail;
+    const columns = `r.id, r.record_key, r.artist, r.artist_credit, r.title, r.title_credit,
+                     r.matrix_number, r.label_number, r.label, r.country, r.format, r.pressing,
+                     r.producer, r.year, r.riddim, r.version, r.genre, r.notes, r.song_origin,
+                     r.additions, r.b_side_artist, r.b_side_artist_credit, r.b_side_title,
+                     r.b_side_title_credit, r.b_side_matrix_number, r.b_side_label_number`;
+
+    // The catalogue number comes back on this query rather than a second one.
+    // It used to be its own lookup from the page, which meant every record view
+    // cost TWO round trips to Turso instead of one — on the single most
+    // requested route in the site, and the one a distributed scrape walks. A
+    // burst of 87k requests across distinct ids (so, all cache misses) is what
+    // pushed the database into 429 rate-limiting; halving the queries per view
+    // halves what any such burst costs us.
+    try {
+      const res = await client.execute({
+        sql: `SELECT ${columns}, n.number AS catalogue_number
+                FROM records r
+                LEFT JOIN record_numbers n ON n.record_key = r.record_key
+               WHERE r.id = ? LIMIT 1`,
+        args: [id],
+      });
+      if (res.rows.length === 0) return null;
+      return res.rows[0] as unknown as RecordDetail;
+    } catch {
+      // No record_numbers table — a database that has never run an import, or
+      // a catalogue restored from a generation built before numbering existed.
+      // The record itself must still load, so fall back to the plain query and
+      // simply have no number.
+      const res = await client.execute({
+        sql: `SELECT ${columns} FROM records r WHERE r.id = ? LIMIT 1`,
+        args: [id],
+      });
+      if (res.rows.length === 0) return null;
+      return { ...(res.rows[0] as unknown as RecordDetail), catalogue_number: null };
+    }
   },
-  ["record-by-id-v2"],
+  ["record-by-id-v3"],
   { tags: [CATALOGUE_TAG], revalidate: 3600 },
 );
 
