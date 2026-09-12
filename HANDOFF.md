@@ -59,7 +59,9 @@ Deletions are tombstones. Full audit log in `modification_log`.
 engines and blocks AI crawlers. 135k indexed pages is the moat vs Reggae Fever.
 
 **5. Catalogue numbers** (`lib/recordNumbers.ts`). "RKR-000123", displayed on each
-entry and resolvable at `/records/RKR-000123`. Filed against `record_key` in a table
+entry, resolvable at `/records/RKR-000123`, and accepted by the keyword search box
+(which redirects to the record — the number is in no indexed column, so searching for
+it as text would find nothing). Filed against `record_key` in a table
 **outside the swap set**, assigned once, never reused or reassigned. The row id could
 not do this job: the diff importer applies a correction as delete-old + insert-new, so
 a record's id changes *precisely when the record is corrected* — the one moment someone

@@ -72,7 +72,7 @@ export default function HeaderSearchForm({
           placeholder={
             hero
               ? "Search by artist, title, label, matrix number, producer…"
-              : "Search by title, artist, matrix no.…"
+              : "Search by title, artist, matrix no., RKR-000123…"
           }
           className={`flex-1 min-w-[10rem] bg-transparent font-body text-ink placeholder:text-ink-soft/70 focus:outline-none ${
             hero ? "px-3 py-3" : "px-3 py-2"

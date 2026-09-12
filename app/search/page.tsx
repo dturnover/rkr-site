@@ -6,6 +6,12 @@ import { reorderedViewMetadata } from "@/lib/reorderedView";
 import { allowSearch } from "@/lib/searchThrottle";
 import { checkCrawlGuard, RESULTS_PAGE_WEIGHT, type GuardVerdict } from "@/lib/crawlGuard";
 import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
+import { redirect } from "next/navigation";
+import {
+  formatRecordNumber,
+  getRecordIdByNumber,
+  parseRecordNumber,
+} from "@/lib/recordNumbers";
 
 // Field-selector searches route through advancedSearch()'s single-field
 // substring LIKE, which can take up to ~100s on the current Turso database
@@ -53,6 +59,27 @@ export default async function SearchPage({
   const page = parsePage(first(sp.page));
 
   const useField = q.trim() && isAdvancedField(field) ? field : null;
+
+  // A catalogue number typed into the keyword box is a request to GO somewhere,
+  // not to search for text. Nothing would match it anyway: the number lives in
+  // its own table (lib/recordNumbers.ts) and is in none of the indexed columns,
+  // so "RKR-000123" previously returned no results — the one identifier the
+  // site tells people to quote was the one thing they couldn't look up.
+  //
+  // Handled before the throttle because it is a single indexed row read, not a
+  // search, and shouldn't spend a search budget meant for full-text queries. It
+  // opens no door that /records/RKR-000123 didn't already open.
+  //
+  // Only for the keyword box: a number typed into the Matrix No. field is a
+  // genuine field search and is left alone. An unknown number falls through to
+  // the normal search, which reports no matches rather than a dead end.
+  if (!useField) {
+    const catalogueNumber = parseRecordNumber(q);
+    if (catalogueNumber != null) {
+      const id = await getRecordIdByNumber(catalogueNumber);
+      if (id != null) redirect(`/records/${formatRecordNumber(catalogueNumber)}`);
+    }
+  }
 
   // Throttle before doing any query work. Only actual searches (q present)
   // count against the limit; an empty search does no work.
