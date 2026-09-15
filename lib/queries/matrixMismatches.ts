@@ -154,11 +154,12 @@ export async function listDismissedPairs(): Promise<DismissedPair[]> {
   return res.rows as unknown as DismissedPair[];
 }
 
-export async function findMatrixMismatchesUncached(): Promise<{
-  rows: MatrixMismatch[];
-  capped: boolean;
-  dismissedCount: number;
-}> {
+/** The self-join only, with NO dismissals applied.
+ *
+ * Kept separate from the dismissal filter on purpose — see findMatrixMismatches
+ * below for why they must not be computed together. Exported so the rule can be
+ * exercised directly against a fixture. */
+export async function findMatrixPairsUncached(): Promise<MatrixMismatch[]> {
   await ensureIndex();
   const client = await getClient();
 
@@ -222,21 +223,18 @@ export async function findMatrixMismatchesUncached(): Promise<{
     };
   });
 
-  // Pairs the compiler has judged unresolvable or wrongly matched drop out
-  // entirely — the list is a worklist, and one that keeps showing settled
-  // questions stops being read.
-  await ensureDismissTable();
-  const dismissedRes = await client.execute(`SELECT dismiss_key FROM matrix_dismissals`);
-  const dismissed = new Set(
-    dismissedRes.rows.map((r) => String((r as unknown as { dismiss_key: string }).dismiss_key))
-  );
-  const live = all.filter((m) => !dismissed.has(m.dismissKey));
+  return all;
+}
 
-  return {
-    rows: live.slice(0, MAX_ROWS),
-    capped: live.length > MAX_ROWS,
-    dismissedCount: dismissed.size,
-  };
+/** Every dismissal currently on record. Cheap — one small table, no join — so
+ * it is read fresh on every visit and never cached. */
+export async function loadDismissedKeys(): Promise<Set<string>> {
+  await ensureDismissTable();
+  const client = await getClient();
+  const res = await client.execute(`SELECT dismiss_key FROM matrix_dismissals`);
+  return new Set(
+    res.rows.map((r) => String((r as unknown as { dismiss_key: string }).dismiss_key))
+  );
 }
 
 // Held for a day, and DELIBERATELY NOT tagged with CATALOGUE_TAG.
@@ -251,8 +249,49 @@ export async function findMatrixMismatchesUncached(): Promise<{
 //
 // A worklist a day old is no worse for its purpose, and the page offers an
 // explicit re-run when a fresh answer is actually wanted.
-export const findMatrixMismatches = unstable_cache(
-  findMatrixMismatchesUncached,
-  ["matrix-mismatches"],
-  { revalidate: 86_400 }
-);
+const cachedPairs = unstable_cache(findMatrixPairsUncached, ["matrix-mismatch-pairs"], {
+  revalidate: 86_400,
+});
+
+/** The worklist: the cached join, with the CURRENT dismissals taken out.
+ *
+ * The two halves are deliberately computed separately, and this is the whole
+ * point of the split. Setting a pair aside used to be folded into the cached
+ * result above, so a dismissal was written to the database and then buried by
+ * the day-old cached answer on the next visit — the compiler reported exactly
+ * this: "when I refresh the page those mismatches are back again". Tagging the
+ * cache so a dismissal could drop it is no fix either: that re-runs the
+ * heaviest query in the application every time he sets one pair aside, which is
+ * the cost problem the day-long cache exists to solve.
+ *
+ * Filtering out here costs one read of a small table and settles both: the join
+ * still runs at most once a day, and a dismissal is permanent and immediate. */
+export interface MatrixWorklist {
+  rows: MatrixMismatch[];
+  capped: boolean;
+  dismissedCount: number;
+}
+
+/** Takes the dismissed pairs out of a set of found ones.
+ *
+ * Pure, and separate from both halves above, so the rule can be exercised
+ * without a Next request context — see scripts/test-matrix-dismissals.ts. */
+export function applyDismissals(
+  all: MatrixMismatch[],
+  dismissed: Set<string>
+): MatrixWorklist {
+  // Pairs the compiler has judged unresolvable or wrongly matched drop out
+  // entirely — the list is a worklist, and one that keeps showing settled
+  // questions stops being read.
+  const live = all.filter((m) => !dismissed.has(m.dismissKey));
+  return {
+    rows: live.slice(0, MAX_ROWS),
+    capped: live.length > MAX_ROWS,
+    dismissedCount: dismissed.size,
+  };
+}
+
+export async function findMatrixMismatches(): Promise<MatrixWorklist> {
+  const [all, dismissed] = await Promise.all([cachedPairs(), loadDismissedKeys()]);
+  return applyDismissals(all, dismissed);
+}

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { dismissMatrixPair, restoreMatrixPair } from "@/lib/queries/matrixMismatches";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
 
 // Setting a matrix divergence aside, or putting it back. Admin only: this is
 // the compiler's judgement about his own data, not something an editor makes
@@ -31,12 +29,20 @@ export async function POST(request: NextRequest) {
     } else if (action === "restore") {
       await restoreMatrixPair(key);
     }
-    // The list is cached against the catalogue tag, so drop it to show the
-    // change straight away rather than on the next upload.
-    revalidateTag(CATALOGUE_TAG, { expire: 0 });
+    // Nothing to invalidate. The worklist applies dismissals outside its cache
+    // (see findMatrixMismatches), so this takes effect on the next render. It
+    // used to call revalidateTag(CATALOGUE_TAG) here, which stopped meaning
+    // anything once the report was untagged — and would have been wrong anyway,
+    // since setting a pair aside changes no catalogue data.
   }
 
+  // Back to the list itself, still running. Without run=1 the page returns to
+  // its "Run the check" prompt showing nothing, which reads as though every
+  // mismatch vanished — the other half of what the compiler reported.
   return NextResponse.redirect(
-    new URL(action === "restore" ? "/admin/matrix?view=dismissed" : "/admin/matrix", request.url)
+    new URL(
+      action === "restore" ? "/admin/matrix?view=dismissed" : "/admin/matrix?run=1",
+      request.url
+    )
   );
 }

@@ -152,8 +152,8 @@ twice is safe, and it reports how many it assigned.
   it along with everything else, and `"./lib/x.ts"`-style imports in a scratch script
   are exactly what it rejects. Keep throwaway scripts outside the repo, or delete them
   before building.
-- Three retained test suites: `npm run test:bside-entry` (14), `npm run test:moved-key`
-  (18) and `npm run test:cleared-fields` (6). The first two cover **derived** data where
+- Four retained test suites: `npm run test:bside-entry` (14), `npm run test:moved-key`
+  (18), `npm run test:cleared-fields` (6) and `npm run test:matrix-dismissals` (12). The first two cover **derived** data where
   being confidently wrong is worse than declining to answer; the third pins down that a
   field cleared on the site stays cleared. They pin down what the strictness buys, so it
   isn't loosened later by someone who only notices it costs matches. There is no test
@@ -192,6 +192,12 @@ twice is safe, and it reports how many it assigned.
   requested route in the site by two orders of magnitude and the one a scrape
   walks, so every extra round trip there is multiplied by ~87k during an event.
   The catalogue number rides along on `getRecordById`'s own SELECT for that reason.
+- **Never fold user state into a long-lived cache.** `/admin/matrix` caches its
+  self-join for a day because it is the heaviest query in the site — but the
+  *dismissals* were being filtered inside that cache, so setting a pair aside was
+  written to the database and then buried by the day-old answer on the next visit.
+  Invalidating the cache on dismissal is the wrong fix: it re-runs the join every
+  time. Cache the expensive derivation; apply the cheap per-user state outside it.
 - **Never rate-limit Googlebot.** `lib/crawlGuard.ts` exempts search engines before
   counting and fails open. Indexing is the whole competitive advantage.
 - **Michael's data is inconsistent by his own account** — partial matrix numbers in the
