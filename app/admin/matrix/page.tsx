@@ -55,7 +55,13 @@ function Row({ m }: { m: MatrixMismatch }) {
           <Matrix value={m.stubMatrix} shared={m.sharedPrefix} />
         </span>
       </td>
-      <td className="px-3 py-2">
+      {/* Pinned to the right edge so it stays on screen while the rest of the
+          row scrolls under it. The table is wider than the panel on a laptop,
+          and this is the only thing on the page you can DO — the compiler
+          reported the list "no longer showing me things that I can set aside"
+          when in fact the button had simply scrolled out of view, with no
+          scrollbar on his machine to suggest there was more to the right. */}
+      <td className="px-3 py-2 sticky right-0 bg-paper border-l border-paper-stain">
         {/* Not every divergence can be fixed — some are false pairs, some are
             simply unknowable now. Setting one aside keeps the list a worklist
             rather than a standing reproach. Reversible from the dismissed
@@ -155,7 +161,7 @@ export default async function MatrixMismatchPage({
                 <th className="px-3 py-2">Its own entry</th>
                 <th className="px-3 py-2">As a B-side</th>
                 <th className="px-3 py-2">Set aside</th>
-                <th className="px-3 py-2"></th>
+                <th className="px-3 py-2 sticky right-0 bg-parchment-deep border-l border-frame"></th>
               </tr>
             </thead>
             <tbody className="font-body">
@@ -168,7 +174,7 @@ export default async function MatrixMismatchPage({
                     {new Date(d.dismissed_at).toLocaleDateString()}
                     {d.dismissed_by ? ` · ${d.dismissed_by}` : ""}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 sticky right-0 bg-paper border-l border-paper-stain">
                     <form action="/api/admin/matrix" method="POST">
                       <input type="hidden" name="action" value="restore" />
                       <input type="hidden" name="key" value={d.dismiss_key} />
@@ -212,7 +218,7 @@ export default async function MatrixMismatchPage({
                   <th className="px-3 py-2">Song</th>
                   <th className="px-3 py-2">Its own entry</th>
                   <th className="px-3 py-2">Listed as a B-side on</th>
-                  <th className="px-3 py-2"></th>
+                  <th className="px-3 py-2 sticky right-0 bg-parchment-deep border-l border-frame"></th>
                 </tr>
               </thead>
               <tbody className="font-body">
