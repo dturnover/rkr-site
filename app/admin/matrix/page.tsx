@@ -100,9 +100,9 @@ export default async function MatrixMismatchPage({
   // after a correction — must not be able to trigger the single most expensive
   // query in the application.
   const run = first(sp.run) === "1";
-  const { rows, capped, dismissedCount } = run
+  const { rows, capped, dismissedCount, computedAt } = run
     ? await findMatrixMismatches()
-    : { rows: [], capped: false, dismissedCount: 0 };
+    : { rows: [], capped: false, dismissedCount: 0, computedAt: null };
   const dismissed = showDismissed ? await listDismissedPairs() : [];
 
   return (
@@ -200,6 +200,30 @@ export default async function MatrixMismatchPage({
         </section>
       ) : (
         <>
+          {/* When the list was actually built, with the way to rebuild it right
+              next to it. Without this, a pair he has just corrected sits on the
+              list looking like the correction failed — he reported precisely
+              that: "the matrix numbers are complete now both A and B side, but
+              they still show up on the log even though I refresh". */}
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+            <p className="font-body text-sm text-ink-soft">
+              {computedAt ? (
+                <>
+                  Checked {new Date(computedAt).toLocaleString()}. Corrections you have made since
+                  then still appear until you run it again.
+                </>
+              ) : null}
+            </p>
+            <form action="/api/admin/matrix" method="POST">
+              <input type="hidden" name="action" value="rerun" />
+              <button
+                type="submit"
+                className="font-body text-xs border border-frame px-3 py-1.5 hover:bg-parchment-deep text-ink whitespace-nowrap"
+              >
+                Check again now
+              </button>
+            </form>
+          </div>
           <p className="font-body text-sm text-ink mb-3">
             <strong>{rows.length.toLocaleString()}</strong>
             {capped ? "+" : ""} to check

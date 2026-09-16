@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/requireAdmin";
-import { dismissMatrixPair, restoreMatrixPair } from "@/lib/queries/matrixMismatches";
+import { revalidateTag } from "next/cache";
+import { dismissMatrixPair, restoreMatrixPair, MATRIX_TAG } from "@/lib/queries/matrixMismatches";
 
 // Setting a matrix divergence aside, or putting it back. Admin only: this is
 // the compiler's judgement about his own data, not something an editor makes
@@ -14,6 +15,16 @@ export async function POST(request: NextRequest) {
   const form = await request.formData();
   const key = String(form.get("key") ?? "");
   const action = String(form.get("action") ?? "");
+
+  // Re-run the check. The join is held for a day so that refreshing this page
+  // cannot keep firing the heaviest query in the application — but that means a
+  // pair the compiler has just CORRECTED stays on the list until the answer is
+  // recomputed, which reads as the correction not having worked. He reported
+  // exactly that. This is the deliberate way to ask for a fresh answer.
+  if (action === "rerun") {
+    revalidateTag(MATRIX_TAG, { expire: 0 });
+    return NextResponse.redirect(new URL("/admin/matrix?run=1", request.url));
+  }
 
   if (key) {
     if (action === "dismiss") {

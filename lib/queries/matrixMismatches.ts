@@ -249,9 +249,17 @@ export async function loadDismissedKeys(): Promise<Set<string>> {
 //
 // A worklist a day old is no worse for its purpose, and the page offers an
 // explicit re-run when a fresh answer is actually wanted.
-const cachedPairs = unstable_cache(findMatrixPairsUncached, ["matrix-mismatch-pairs"], {
-  revalidate: 86_400,
-});
+/** Own tag, deliberately not CATALOGUE_TAG. The catalogue tag is invalidated by
+ * every edit, deletion and upload, and tying this join to it is what re-ran the
+ * heaviest query in the application on every refresh. This tag is dropped ONLY
+ * when the compiler asks for a fresh check. */
+export const MATRIX_TAG = "matrix-mismatches";
+
+const cachedPairs = unstable_cache(
+  async () => ({ pairs: await findMatrixPairsUncached(), computedAt: new Date().toISOString() }),
+  ["matrix-mismatch-pairs-v2"],
+  { tags: [MATRIX_TAG], revalidate: 86_400 }
+);
 
 /** The worklist: the cached join, with the CURRENT dismissals taken out.
  *
@@ -270,6 +278,10 @@ export interface MatrixWorklist {
   rows: MatrixMismatch[];
   capped: boolean;
   dismissedCount: number;
+  /** When the join behind these rows actually ran. Shown on the page: a pair
+   * the compiler has just corrected stays listed until the check is re-run, and
+   * without a date on screen that looks like the correction didn't take. */
+  computedAt: string | null;
 }
 
 /** Takes the dismissed pairs out of a set of found ones.
@@ -278,7 +290,8 @@ export interface MatrixWorklist {
  * without a Next request context — see scripts/test-matrix-dismissals.ts. */
 export function applyDismissals(
   all: MatrixMismatch[],
-  dismissed: Set<string>
+  dismissed: Set<string>,
+  computedAt: string | null = null
 ): MatrixWorklist {
   // Pairs the compiler has judged unresolvable or wrongly matched drop out
   // entirely — the list is a worklist, and one that keeps showing settled
@@ -288,10 +301,11 @@ export function applyDismissals(
     rows: live.slice(0, MAX_ROWS),
     capped: live.length > MAX_ROWS,
     dismissedCount: dismissed.size,
+    computedAt,
   };
 }
 
 export async function findMatrixMismatches(): Promise<MatrixWorklist> {
-  const [all, dismissed] = await Promise.all([cachedPairs(), loadDismissedKeys()]);
-  return applyDismissals(all, dismissed);
+  const [cached, dismissed] = await Promise.all([cachedPairs(), loadDismissedKeys()]);
+  return applyDismissals(cached.pairs, dismissed, cached.computedAt);
 }
