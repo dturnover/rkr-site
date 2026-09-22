@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { dismissTypo, TYPO_FIELDS, type TypoField } from "@/lib/typos";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { revalidateCatalogue } from "@/lib/cacheTags";
 
 function isTypoField(v: string): v is TypoField {
   return (TYPO_FIELDS as readonly string[]).includes(v);
@@ -29,6 +28,6 @@ export async function POST(request: NextRequest) {
   }
 
   // Refresh the cached suggestion list so the dismissed item drops off.
-  revalidateTag(CATALOGUE_TAG, { expire: 0 });
+  revalidateCatalogue();
   return NextResponse.redirect(new URL("/admin/typos?dismissed=1", request.url));
 }

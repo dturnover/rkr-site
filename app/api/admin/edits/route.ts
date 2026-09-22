@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { removeFieldEdit, renameEditor, restoreDeletedRecord } from "@/lib/editor/overlay";
 import { listUsers, setUserDisplayName } from "@/lib/auth/users";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { revalidateCatalogue } from "@/lib/cacheTags";
 
 // Admin-only management of the editor overlay: removing a field override
 // (which reverts the live record to dad's original value when it can still be
@@ -46,7 +45,7 @@ export async function POST(request: NextRequest) {
       await restoreDeletedRecord(recordKey, { uid: session.uid, name: session.name });
       // Nothing changes on the live site until the next upload re-materialises
       // the row, but drop the cache anyway so the admin list is accurate.
-      revalidateTag(CATALOGUE_TAG, { expire: 0 });
+      revalidateCatalogue();
       return NextResponse.redirect(new URL(`/admin/edits?restored=1`, request.url));
     }
   }
@@ -56,7 +55,7 @@ export async function POST(request: NextRequest) {
     const field = String(form.get("field") ?? "");
     if (recordKey && field) {
       const reverted = await removeFieldEdit(recordKey, field);
-      revalidateTag(CATALOGUE_TAG, { expire: 0 });
+      revalidateCatalogue();
       return NextResponse.redirect(
         new URL(`/admin/edits?removed=${reverted ? "reverted" : "pending"}`, request.url)
       );

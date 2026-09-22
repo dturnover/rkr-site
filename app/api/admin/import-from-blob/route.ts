@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { del } from "@vercel/blob";
 import { isAdminAuthenticated } from "@/lib/auth/requireAdmin";
 import { importAndSwap } from "@/lib/import/atomicSwap";
 import { canDiff, importDiff } from "@/lib/import/diffImport";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { revalidateCatalogue } from "@/lib/cacheTags";
 
 // A full catalogue rebuild (135k+ rows, generated columns, FTS indexing) is a
 // genuinely heavy one-off operation — give it the most headroom Vercel allows
@@ -100,7 +99,7 @@ export async function POST(request: NextRequest) {
 
         // Flush all catalogue caches (records, search, browse, status) so the
         // new data is served immediately rather than after each cache's TTL.
-        revalidateTag(CATALOGUE_TAG, { expire: 0 });
+        revalidateCatalogue();
 
         // A full diff can span several passes; only delete the uploaded blob
         // once the import is fully complete (later passes re-fetch it).

@@ -58,6 +58,17 @@ Deletions are tombstones. Full audit log in `modification_log`.
 **4. SEO.** Per-record metadata, 4-chunk sitemap index, robots.txt that allows search
 engines and blocks AI crawlers. 135k indexed pages is the moat vs Reggae Fever.
 
+**4b. `/records/[id]` is CACHED, and must stay that way.** Traffic runs at roughly
+800 machine requests per real visitor (~34k function invocations per six hours
+against 1.2k visitors a week), so while that page read cookies, headers or search
+params it cost a serverless invocation on every bot hit — which is what put the
+Vercel bill into overage. Editing lives at `./edit`; the crawl guard is off this
+route (rate limiting belongs at the firewall); the `?back=` link is gone, because
+reading one search param costs the whole cache. `dynamic = "force-static"` is the
+guard: reintroduce a request API and it returns empty rather than silently making
+the page dynamic again. **Check the build output** — the route must print `○`, not
+`ƒ`.
+
 **5. Catalogue numbers** (`lib/recordNumbers.ts`). "RKR-000123", displayed on each
 entry, resolvable at `/records/RKR-000123`, and accepted by the keyword search box
 (which redirects to the record — the number is in no indexed column, so searching for
@@ -198,6 +209,11 @@ twice is safe, and it reports how many it assigned.
   written to the database and then buried by the day-old answer on the next visit.
   Invalidating the cache on dismissal is the wrong fix: it re-runs the join every
   time. Cache the expensive derivation; apply the cheap per-user state outside it.
+- **Two caches, not one.** `revalidateTag` clears cached DATA; `revalidatePath`
+  clears cached PAGES. Since the record page became static, the tag alone leaves a
+  corrected record serving old HTML. Write paths call `revalidateCatalogue()` from
+  `lib/cacheTags.ts`, which does both — pass a record id for a single-record edit,
+  omit it after an import.
 - **Never rate-limit Googlebot.** `lib/crawlGuard.ts` exempts search engines before
   counting and fails open. Indexing is the whole competitive advantage.
 - **Michael's data is inconsistent by his own account** — partial matrix numbers in the

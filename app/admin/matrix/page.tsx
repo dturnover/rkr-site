@@ -40,7 +40,7 @@ function Row({ m }: { m: MatrixMismatch }) {
         </span>
       </td>
       <td className="px-3 py-2">
-        <Link href={`/records/${m.ownId}`} className="text-link underline hover:text-rasta-red">
+        <Link href={`/records/${m.ownId}/edit`} className="text-link underline hover:text-rasta-red">
           {m.ownLabelNumber || `#${m.ownId}`}
         </Link>
         <span className="block mt-0.5">
@@ -48,7 +48,7 @@ function Row({ m }: { m: MatrixMismatch }) {
         </span>
       </td>
       <td className="px-3 py-2">
-        <Link href={`/records/${m.stubId}`} className="text-link underline hover:text-rasta-red">
+        <Link href={`/records/${m.stubId}/edit`} className="text-link underline hover:text-rasta-red">
           {m.stubLabelNumber || `#${m.stubId}`}
         </Link>
         <span className="block mt-0.5">

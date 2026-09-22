@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { assignMissingRecordNumbers } from "@/lib/recordNumbers";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { revalidateCatalogue } from "@/lib/cacheTags";
 
 // Hands catalogue numbers to any records that don't have one yet.
 //
@@ -26,7 +25,7 @@ export async function POST(request: NextRequest) {
   try {
     const assigned = await assignMissingRecordNumbers();
     // The detail page's number lookups are cached under this tag.
-    revalidateTag(CATALOGUE_TAG, { expire: 0 });
+    revalidateCatalogue();
     return NextResponse.redirect(new URL(`/admin?numbered=${assigned}`, request.url));
   } catch (err) {
     console.error("[record-numbers] assignment failed", err);

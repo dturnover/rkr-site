@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { applyFieldEdits, EDITABLE_FIELDS, type EditableField } from "@/lib/editor/overlay";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { revalidateCatalogue } from "@/lib/cacheTags";
 
 // Saving an edit can touch the FTS tables and derived columns; keep the
 // generous function budget the other write routes use.
@@ -29,11 +28,11 @@ export async function POST(request: NextRequest) {
   try {
     changed = await applyFieldEdits(recordId, incoming, { uid: session.uid, name: session.name });
   } catch {
-    return NextResponse.redirect(new URL(`/records/${recordId}?editError=1`, request.url));
+    return NextResponse.redirect(new URL(`/records/${recordId}/edit?editError=1`, request.url));
   }
 
   // Reflect the edit immediately across cached record/search/browse views.
-  if (changed > 0) revalidateTag(CATALOGUE_TAG, { expire: 0 });
+  if (changed > 0) revalidateCatalogue(recordId);
 
-  return NextResponse.redirect(new URL(`/records/${recordId}?saved=${changed}`, request.url));
+  return NextResponse.redirect(new URL(`/records/${recordId}/edit?saved=${changed}`, request.url));
 }

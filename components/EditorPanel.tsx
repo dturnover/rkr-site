@@ -107,7 +107,7 @@ export default function EditorPanel({
             {mismatches.map((m, i) => (
               <li key={i}>
                 <Link
-                  href={`/records/${m.siblingId}`}
+                  href={`/records/${m.siblingId}/edit`}
                   className="text-link underline hover:text-rasta-red"
                 >
                   {m.siblingLabelNumber || `entry ${m.siblingId}`}
@@ -153,7 +153,7 @@ export default function EditorPanel({
       {bSideEntry && (
         <p className="font-body text-sm mb-2">
           <Link
-            href={`/records/${bSideEntry.id}`}
+            href={`/records/${bSideEntry.id}/edit`}
             className="text-link hover:text-rasta-red underline"
           >
             &rarr; Open the B-side&rsquo;s own entry

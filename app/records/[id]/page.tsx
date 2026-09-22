@@ -2,73 +2,37 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import TrackDetailCard from "@/components/TrackDetailCard";
-import EditorPanel from "@/components/EditorPanel";
-import { getRecordById } from "@/lib/queries/records";
-import { getSession } from "@/lib/auth/requireAdmin";
-import { computeRecordKey, getRecordLog } from "@/lib/editor/overlay";
-import { checkCrawlGuard } from "@/lib/crawlGuard";
-import { CrawlBlocked, CrawlWarning } from "@/components/CrawlNotice";
-import { deriveReleaseBase, findStubMismatches, getReleaseSiblings } from "@/lib/releaseGroup";
 import ReleaseTracks from "@/components/ReleaseTracks";
-import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
-import { findBSideEntry } from "@/lib/queries/bSideEntry";
-import { getRecordIdByNumber, parseRecordNumber } from "@/lib/recordNumbers";
+import { getRecordById } from "@/lib/queries/records";
+import { deriveReleaseBase, getReleaseSiblings } from "@/lib/releaseGroup";
+import { resolveRecordId } from "@/lib/recordRoute";
 import { FLAG_RECORD_NUMBERS, isEnabled } from "@/lib/settings";
 
-// `back` comes from a URL query param, so it's untrusted input even though
-// it only ever renders an in-page link, never a server redirect.
+// This page is CACHED, and everything about it is shaped by that.
 //
-// Rejecting "//" by prefix is NOT sufficient: browsers normalise a backslash
-// to a forward slash while parsing, so "/\evil.com" passes a naive
-// startsWith("//") check and still resolves to https://evil.com — an
-// off-site "Back to results" link, i.e. a phishing vector. Rather than play
-// whack-a-mole with escape variants, resolve the value against a dummy
-// origin and require that it actually stayed on that origin.
-const DUMMY_ORIGIN = "https://rkr.invalid";
+// It is the most requested route in the site by two orders of magnitude, and
+// almost all of that traffic is machines — measured at roughly 800 requests per
+// real visitor: ~34k function invocations every six hours against 1.2k visitors
+// a week. While this page read cookies (the session), headers (the crawl guard)
+// or search params (?back=), Next had to run a function for every one of those
+// requests and nothing could be served from a cache. That was the bill.
+//
+// So this route reads NONE of them. The session and the editor tools moved to
+// ./edit. The crawl guard moved off this route entirely — rate limiting belongs
+// at the firewall, which turns a request away before we pay to render it. The
+// "Back to results" link is gone, because reading one search parameter costs
+// the entire cache.
+//
+// force-static is the guard rather than the mechanism: it makes cookies(),
+// headers() and search params return empty here, so if one of them is ever
+// reintroduced this page keeps serving from cache instead of quietly going
+// dynamic again and restoring the bill with nothing on screen to show for it.
+export const dynamic = "force-static";
 
-function safeBackHref(value: string | undefined): string | null {
-  if (!value) return null;
-  if (!value.startsWith("/")) return null;
-  // Control characters (tab/newline) are stripped by URL parsers and can be
-  // used to smuggle a scheme past the checks below.
-  if (/[\u0000-\u0020\\]/.test(value)) return null;
-  let resolved: URL;
-  try {
-    resolved = new URL(value, DUMMY_ORIGIN);
-  } catch {
-    return null;
-  }
-  if (resolved.origin !== DUMMY_ORIGIN) return null;
-  return `${resolved.pathname}${resolved.search}`;
-}
-
-// A record is reachable by two different names in this one URL segment:
-//
-//   /records/48213         the row id — what every internal link, the sitemap
-//                          and every already-indexed URL uses
-//   /records/RKR-000123    the permanent catalogue number (lib/recordNumbers.ts)
-//
-// The two namespaces overlap as bare integers, which is exactly why the
-// catalogue number is only ever recognised in its prefixed form. A plain "123"
-// is always a row id and is never quietly reinterpreted as catalogue number
-// 123 — those are two different records, and guessing between them would hand
-// a reader the wrong one.
-//
-// The row id stays canonical (see generateMetadata): the 135k already-indexed
-// URLs are built on it, and pointing search engines at a second address for
-// every page is not a change to make as a side effect of adding a number.
-async function resolveRecordId(segment: string): Promise<number | null> {
-  const catalogueNumber = parseRecordNumber(segment);
-  if (catalogueNumber != null) {
-    // Gated with the display: if the compiler switches catalogue numbers off,
-    // the addresses they created stop resolving too, rather than lingering as
-    // the one part of a disabled feature still answering.
-    if (!(await isEnabled(FLAG_RECORD_NUMBERS))) return null;
-    return await getRecordIdByNumber(catalogueNumber);
-  }
-  const rowId = parseInt(segment, 10);
-  return Number.isFinite(rowId) ? rowId : null;
-}
+// Corrections must not wait this out, and they don't: every write path
+// revalidates the record it touched, and an import revalidates the whole route.
+// This window is only the backstop for anything that slips past that.
+export const revalidate = 3600;
 
 // Per-record title/description. Without this every one of the 135k detail
 // pages inherited the site-wide title, so to a search engine they looked like
@@ -122,13 +86,7 @@ export async function generateMetadata({
   };
 }
 
-export default async function RecordPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<RawSearchParams>;
-}) {
+export default async function RecordPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const recordId = await resolveRecordId(id);
   // Null covers both an unreadable segment and a catalogue number whose record
@@ -136,24 +94,8 @@ export default async function RecordPage({
   // number is a 404 rather than a best guess at what it used to mean.
   if (recordId == null) notFound();
 
-  // Detail pages are the surface a bulk copy has to walk — one request per
-  // record, 135k of them — so the rate check goes here. Search engines are
-  // exempt and it fails open; see lib/crawlGuard.ts.
-  const guard = await checkCrawlGuard();
-  if (guard.action === "block") {
-    return <CrawlBlocked retryAfterMinutes={guard.retryAfterMinutes} />;
-  }
-
   const record = await getRecordById(recordId);
   if (!record) notFound();
-
-  const sp = await searchParams;
-  const backHref = safeBackHref(first(sp.back));
-  const saved = first(sp.saved);
-  const createdState = first(sp.created);
-  const created = createdState === "1" || createdState === "pair";
-  const editError = first(sp.editError) === "1";
-  const deleteError = first(sp.deleteError);
 
   // A 12" or EP is entered as two rows sharing a base label number, so the
   // other half of the record has to be found and shown alongside it. Format
@@ -176,85 +118,18 @@ export default async function RecordPage({
     ? (record.catalogue_number ?? null)
     : null;
 
-  const session = await getSession();
-  const isEditor = !!session;
-  // The B side's own entry, when it has one. Looked up only for signed-in
-  // editors: it exists to shorten "I need to fix the year on this flip side",
-  // which is an editing job, and keeping it off the public path leaves the
-  // most-crawled page in the site at exactly the query count it had before.
-  const bSideEntry = isEditor
-    ? await findBSideEntry({
-        id: record.id,
-        b_side_artist: record.b_side_artist,
-        b_side_title: record.b_side_title,
-        label: record.label,
-        country: record.country,
-        format: record.format,
-        year: record.year,
-      })
-    : null;
-  const log = isEditor ? await getRecordLog(computeRecordKey(record)) : [];
-  // Where a paired entry's stub disagrees with this entry. Admin only: the
-  // compiler judged this too fine-grained to put in front of editors, who
-  // would be reading it as a fault on a record they didn't enter. He keeps the
-  // catalogue-wide list at /admin/matrix; this is the same thing in passing.
-  // Computed from siblings already fetched above, so it costs nothing extra.
-  const mismatches =
-    session?.role === "admin" ? findStubMismatches(record, siblings) : [];
-
   return (
     <div className="max-w-2xl mx-auto">
-      {backHref && (
-        <Link
-          href={backHref}
-          className="font-body text-sm text-ink-soft hover:text-rasta-red inline-block mb-3"
-        >
-          &laquo; Back to results
-        </Link>
-      )}
-
-      {guard.action === "warn" && <CrawlWarning />}
-
-      {created && (
-        <div className="border-2 border-rasta-green text-rasta-green bg-paper px-4 py-2 font-body mb-4">
-          {createdState === "pair"
-            ? "Both entries created — this side, and the B-side as its own entry with its own producer, riddim and genre."
-            : "New track created."}
-        </div>
-      )}
-      {saved != null && (
-        <div className="border-2 border-rasta-green text-rasta-green bg-paper px-4 py-2 font-body mb-4">
-          {Number(saved) > 0
-            ? `Saved ${saved} change${Number(saved) === 1 ? "" : "s"}.`
-            : "No changes to save."}
-        </div>
-      )}
-      {editError && (
-        <div className="border-2 border-error text-error bg-paper px-4 py-2 font-body mb-4">
-          Something went wrong saving those changes. Please try again.
-        </div>
-      )}
-      {deleteError && (
-        <div className="border-2 border-error text-error bg-paper px-4 py-2 font-body mb-4">
-          {deleteError === "confirm"
-            ? "Nothing was deleted — you need to tick the confirmation box first."
-            : deleteError === "missing"
-              ? "That record no longer exists, so there was nothing to delete."
-              : "Something went wrong deleting that record. Please try again."}
-        </div>
-      )}
-
-      {/* Editors reach the tools by scrolling past the whole detail card, which
-          on a phone is a long way down and easy to miss entirely — so surface a
-          jump link up here too. */}
-      {isEditor && (
-        <a
-          href="#editor-tools"
-          className="inline-block mb-3 px-3 py-1.5 border border-frame text-ink font-body text-sm tracking-wide hover:bg-parchment-deep transition-colors"
-        >
-          ✎ Edit this track
-        </a>
-      )}
+      {/* Editors arrive from a bookmark or from here; everyone else is one
+          click from a sign-in page the footer already links publicly. nofollow
+          so crawlers don't spend our redirects walking it. */}
+      <Link
+        href={`/records/${record.id}/edit`}
+        rel="nofollow"
+        className="font-body text-xs text-ink-soft hover:text-rasta-red inline-block mb-3"
+      >
+        &#9998; Edit this entry
+      </Link>
 
       <TrackDetailCard record={record} catalogueNumber={catalogueNumber} />
 
@@ -263,18 +138,6 @@ export default async function RecordPage({
         siblings={siblings}
         base={deriveReleaseBase(record.label_number)}
       />
-
-      {isEditor && (
-        <div id="editor-tools" className="mt-6 scroll-mt-4">
-          <EditorPanel
-            record={record}
-            log={log}
-            editorName={session.name}
-            mismatches={mismatches}
-            bSideEntry={bSideEntry}
-          />
-        </div>
-      )}
     </div>
   );
 }

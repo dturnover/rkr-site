@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { createRecord, EDITABLE_FIELDS, type EditableField } from "@/lib/editor/overlay";
 import { SECOND_SIDE_PREFIX } from "@/components/EditorRecordForm";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { revalidateCatalogue } from "@/lib/cacheTags";
 
 export const maxDuration = 60;
 
@@ -86,9 +85,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL("/records/new?createError=1", request.url));
   }
 
-  revalidateTag(CATALOGUE_TAG, { expire: 0 });
+  revalidateCatalogue(newId);
 
   return NextResponse.redirect(
-    new URL(`/records/${newId}?created=${wantsPair ? "pair" : "1"}`, request.url)
+    new URL(`/records/${newId}/edit?created=${wantsPair ? "pair" : "1"}`, request.url)
   );
 }

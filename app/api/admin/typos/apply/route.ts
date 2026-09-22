@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { applyCategoryCorrection, TYPO_FIELDS, type TypoField } from "@/lib/typos";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { revalidateCatalogue } from "@/lib/cacheTags";
 
 // Applying a correction touches every record with the bad value; give it room.
 export const maxDuration = 120;
@@ -37,6 +36,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL("/admin/typos?error=apply-failed", request.url));
   }
 
-  revalidateTag(CATALOGUE_TAG, { expire: 0 });
+  revalidateCatalogue();
   return NextResponse.redirect(new URL(`/admin/typos?applied=${changed}`, request.url));
 }
