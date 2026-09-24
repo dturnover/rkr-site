@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/requireAdmin";
+import { getSession, refreshEditorHint } from "@/lib/auth/requireAdmin";
 import { deleteRecord } from "@/lib/editor/overlay";
 import { revalidateCatalogue } from "@/lib/cacheTags";
 
@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.redirect(new URL("/admin?error=unauthorized", request.url));
   }
+  await refreshEditorHint(session.role);
 
   const form = await request.formData();
   const recordId = parseInt(String(form.get("recordId") ?? ""), 10);
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL(`/records/${recordId}/edit?deleteError=missing`, request.url));
   }
 
-  revalidateCatalogue(recordId);
+  revalidateCatalogue(recordId, { countChanged: true });
 
   // The record page is gone, so there's nowhere on it to land — send them home
   // with a note instead of a 404.

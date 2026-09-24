@@ -6,12 +6,18 @@ import HeaderSearchForm from "@/components/HeaderSearchForm";
 import GuideContent from "@/components/GuideContent";
 import StudioPhoto from "@/components/StudioPhoto";
 import { PROSE_CLASS } from "@/components/ProsePage";
-import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import DeletedNotice from "@/components/DeletedNotice";
 
-// The catalogue can change at any time via an admin CSV upload without a
-// redeploy, so this page (which has no cookies/searchParams to otherwise
-// force dynamic rendering) must not be statically cached at build time.
-export const dynamic = "force-dynamic";
+// Cached, like the record pages. This used to be force-dynamic — a function
+// invocation on every visit to the most-visited page after the records — only
+// so it could read ?deleted=1 for a banner a handful of editors ever see. The
+// banner now reads the URL in the browser (components/DeletedNotice.tsx).
+//
+// Freshness: the one piece of catalogue data here is the track count and
+// last-updated date (getDatabaseStatus). Every write that can change those —
+// create, delete, import, restore — drops both that data and this page via
+// revalidateCatalogue, so the window below is only the backstop.
+export const revalidate = 86400;
 
 // const TILE_ICONS: Record<string, string> = {
 //   artists: "🎤",
@@ -25,23 +31,17 @@ export const dynamic = "force-dynamic";
 //   origins: "✎",
 // };
 
-export default async function Home({
-  searchParams,
-}: {
-  searchParams: Promise<RawSearchParams>;
-}) {
+export default async function Home() {
   const status = await getDatabaseStatus();
-  // Where an editor lands after deleting a record — the record's own page is
-  // gone, so the confirmation has to be shown somewhere that still exists.
-  const deleted = first((await searchParams).deleted) === "1";
 
   return (
     <div className="space-y-10 max-w-4xl mx-auto">
-      {deleted && (
-        <div className="border-2 border-rasta-green text-rasta-green bg-paper px-4 py-2 font-body">
-          Record deleted. It won&rsquo;t come back on the next spreadsheet upload.
-        </div>
-      )}
+      {/* Where an editor lands after deleting a record — the record's own page
+          is gone, so the confirmation has to be shown somewhere that still
+          exists. Suspense keeps the URL read local to the banner. */}
+      <Suspense fallback={null}>
+        <DeletedNotice />
+      </Suspense>
       {/* Search is the whole point of the site, so it leads the page rather
           than sitting only in the header. The header's compact search hides
           itself on "/" (see HeaderSearchForm) so this isn't a duplicate.

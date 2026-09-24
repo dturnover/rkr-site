@@ -5,6 +5,8 @@ import {
   SESSION_COOKIE_OPTIONS,
   createSessionCookie,
   checkAdminPassword,
+  EDITOR_HINT_COOKIE_NAME,
+  EDITOR_HINT_COOKIE_OPTIONS,
 } from "@/lib/auth/session";
 import { verifyCredentials } from "@/lib/auth/users";
 import { isLockedOut, recordFailure, recordSuccess, loginKeys } from "@/lib/auth/loginRateLimit";
@@ -63,6 +65,9 @@ export async function POST(request: NextRequest) {
 
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, createSessionCookie(session), SESSION_COOKIE_OPTIONS);
+  // Lets the cached record pages draw the Edit link. Carries no authority —
+  // see EDITOR_HINT_COOKIE_NAME.
+  cookieStore.set(EDITOR_HINT_COOKIE_NAME, session.role, EDITOR_HINT_COOKIE_OPTIONS);
 
   return NextResponse.redirect(new URL("/admin", request.url));
 }

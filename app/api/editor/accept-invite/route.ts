@@ -4,6 +4,8 @@ import {
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_OPTIONS,
   createSessionCookie,
+  EDITOR_HINT_COOKIE_NAME,
+  EDITOR_HINT_COOKIE_OPTIONS,
 } from "@/lib/auth/session";
 import { createUser, setPasswordByEmail } from "@/lib/auth/users";
 import { getInvite, isInviteUsable, markInviteAccepted } from "@/lib/auth/invites";
@@ -59,6 +61,7 @@ export async function POST(request: NextRequest) {
 
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, createSessionCookie(session), SESSION_COOKIE_OPTIONS);
+  cookieStore.set(EDITOR_HINT_COOKIE_NAME, session.role, EDITOR_HINT_COOKIE_OPTIONS);
 
   // A brand-new editor gets the welcome guide; a returning one just goes to
   // their account page.

@@ -7,7 +7,6 @@ import SiteFooter from "@/components/SiteFooter";
 import HomeMobileSearch from "@/components/HomeMobileSearch";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { getSession } from "@/lib/auth/requireAdmin";
 import { SITE_URL } from "@/lib/siteUrl";
 
 // Only the SVG masthead wordmark uses Cinzel now, and only at 700 — headings
@@ -82,13 +81,19 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({
+// NOT async, and it deliberately does not read the session.
+//
+// This layout wraps every route in the application, and a layout that touches
+// cookies() forces every one of them to render per request — which is exactly
+// what kept all 135,543 record pages uncacheable. The sidebar needs to know
+// whether to draw the editor links, so it now reads the non-secret hint cookie
+// in the browser instead (lib/useEditorHint.ts). Nothing is gated here; every
+// page behind those links checks the real session server-side.
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await getSession();
-
   return (
     <html
       lang="en"
@@ -104,7 +109,7 @@ export default async function RootLayout({
             sidebar to the far left edge with the centred content stranded a
             long way from it. */}
         <div className="flex-1 w-full max-w-[96rem] mx-auto flex flex-col lg:flex-row lg:items-start px-3 sm:px-4 lg:px-6 py-6 gap-4 lg:gap-6">
-          <SiteSidebar isEditor={!!session} isAdmin={session?.role === "admin"} />
+          <SiteSidebar />
           <main className="flex-1 min-w-0 w-full">{children}</main>
         </div>
         <SiteFooter />

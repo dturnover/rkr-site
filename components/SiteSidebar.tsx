@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEditorHint } from "@/lib/useEditorHint";
 import { FACET_ORDER, FACETS } from "@/lib/facetConfig";
 
 const ABOUT_LINKS: { href: string; label: string }[] = [
@@ -14,14 +15,12 @@ const ABOUT_LINKS: { href: string; label: string }[] = [
   { href: "/contact", label: "Corrections & Contact" },
 ];
 
-export default function SiteSidebar({
-  isEditor = false,
-  isAdmin = false,
-}: {
-  isEditor?: boolean;
-  isAdmin?: boolean;
-}) {
+export default function SiteSidebar() {
   const pathname = usePathname();
+  // Read in the browser rather than passed down from the layout: a layout that
+  // reads cookies makes every route in the site render per request. These links
+  // are navigation only — the pages behind them do the real session check.
+  const { isEditor, isAdmin } = useEditorHint();
 
   // Editor tools only appear for a signed-in editor/admin. New Track and the
   // Modification Log are for everyone with edit access; Admin is admin-only.

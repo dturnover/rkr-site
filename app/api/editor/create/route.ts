@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/requireAdmin";
+import { getSession, refreshEditorHint } from "@/lib/auth/requireAdmin";
 import { createRecord, EDITABLE_FIELDS, type EditableField } from "@/lib/editor/overlay";
 import { SECOND_SIDE_PREFIX } from "@/components/EditorRecordForm";
 import { revalidateCatalogue } from "@/lib/cacheTags";
@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.redirect(new URL("/admin?error=unauthorized", request.url));
   }
+  await refreshEditorHint(session.role);
 
   const form = await request.formData();
   const editor = { uid: session.uid, name: session.name };
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL("/records/new?createError=1", request.url));
   }
 
-  revalidateCatalogue(newId);
+  revalidateCatalogue(newId, { countChanged: true });
 
   return NextResponse.redirect(
     new URL(`/records/${newId}/edit?created=${wantsPair ? "pair" : "1"}`, request.url)

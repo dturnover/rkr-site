@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { CATALOGUE_SIZE_TAG } from "@/lib/cacheTags";
 import {
   LIVE_TABLE,
   LIVE_FTS_TABLE,
@@ -316,8 +316,15 @@ export async function restorePrevious(): Promise<void> {
   }
 }
 
-// Cached: the home page reads this on every visit. Invalidated immediately on
-// import/restore (CATALOGUE_TAG); the 5-minute revalidate is a safety net.
+// Cached: the home page reads this on every visit, and rowCount is a COUNT(*)
+// over the whole catalogue — ~135k rows read every time it's recomputed.
+//
+// Tagged CATALOGUE_SIZE_TAG rather than CATALOGUE_TAG, so an ordinary field
+// correction no longer throws it away; only a create, delete, import or
+// restore does (see lib/cacheTags.ts). And a day rather than five minutes:
+// the five-minute window re-ran that full count ~8,600 times a month — on the
+// order of a billion rows read — to print a number that only changes when one
+// of those writes happens, each of which already flushes it immediately.
 export const getDatabaseStatus = unstable_cache(
   async () => {
     const live = await tableExists(LIVE_TABLE);
@@ -329,5 +336,5 @@ export const getDatabaseStatus = unstable_cache(
     };
   },
   ["database-status"],
-  { tags: [CATALOGUE_TAG], revalidate: 300 },
+  { tags: [CATALOGUE_SIZE_TAG], revalidate: 86_400 },
 );

@@ -5,30 +5,22 @@ import crypto from "node:crypto";
 // so editor attribution and role gating work. Signed with an HMAC over
 // ADMIN_COOKIE_SECRET so the client can't forge or tamper with the payload;
 // httpOnly/SameSite and the rest live in SESSION_COOKIE_OPTIONS below.
-export const SESSION_COOKIE_NAME = "rkr_admin";
-const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
-export const SESSION_MAX_AGE_SECONDS = SEVEN_DAYS_SECONDS;
+// The cookie names and write options live in ./cookieNames so a client
+// component can import the hint cookie's name without dragging node:crypto
+// (used below) into the browser bundle. Re-exported here because every
+// server-side caller already imports them from this module.
+export {
+  SESSION_COOKIE_NAME,
+  SESSION_MAX_AGE_SECONDS,
+  SESSION_COOKIE_OPTIONS,
+  EDITOR_HINT_COOKIE_NAME,
+  EDITOR_HINT_COOKIE_OPTIONS,
+} from "./cookieNames";
 
-/** The one definition of how the session cookie is written, so the login and
- * invite-acceptance paths can't drift apart.
- *
- * sameSite is "lax", NOT "strict". Under Strict the browser withholds the
- * cookie on ANY navigation that originates off-site — so an editor who opened a
- * track link from a text message, an email, or a search result landed on a page
- * that rendered as signed-out (observed: the editor nav links and the Editor
- * Tools panel simply weren't there, until they clicked something internal).
- * Lax still withholds the cookie on cross-site POSTs, which is the CSRF
- * protection these plain-form endpoints actually rely on, while sending it on
- * ordinary top-level GET navigations. */
-export const SESSION_COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
-  path: "/",
-  maxAge: SESSION_MAX_AGE_SECONDS,
-} as const;
+import { SESSION_MAX_AGE_SECONDS } from "./cookieNames";
 
-export type Role = "admin" | "editor";
+export type { Role } from "./cookieNames";
+import type { Role } from "./cookieNames";
 
 // uid is the users-table id for a provisioned account, or the sentinel
 // "env-admin" for the bootstrap admin authenticated by ADMIN_PASSWORD (which
@@ -63,7 +55,7 @@ function sign(data: string): string {
 
 /** base64url(payload) + "." + hmac */
 export function createSessionCookie(session: Omit<SessionPayload, "exp">): string {
-  const payload = JSON.stringify({ ...session, exp: Date.now() + SEVEN_DAYS_SECONDS * 1000 });
+  const payload = JSON.stringify({ ...session, exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000 });
   const encoded = Buffer.from(payload).toString("base64url");
   return `${encoded}.${sign(encoded)}`;
 }

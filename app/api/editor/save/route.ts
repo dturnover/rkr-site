@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/requireAdmin";
+import { getSession, refreshEditorHint } from "@/lib/auth/requireAdmin";
 import { applyFieldEdits, EDITABLE_FIELDS, type EditableField } from "@/lib/editor/overlay";
 import { revalidateCatalogue } from "@/lib/cacheTags";
 
@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.redirect(new URL("/admin?error=unauthorized", request.url));
   }
+  await refreshEditorHint(session.role);
 
   const form = await request.formData();
   const recordId = parseInt(String(form.get("recordId") ?? ""), 10);

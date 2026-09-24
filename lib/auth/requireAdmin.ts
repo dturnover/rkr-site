@@ -1,6 +1,12 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { SESSION_COOKIE_NAME, readSessionCookie, type SessionPayload } from "./session";
+import {
+  EDITOR_HINT_COOKIE_NAME,
+  EDITOR_HINT_COOKIE_OPTIONS,
+  SESSION_COOKIE_NAME,
+  readSessionCookie,
+  type SessionPayload,
+} from "./session";
 import { getActiveUserById } from "./users";
 
 // Validating the signed cookie alone is NOT enough: the payload is fixed at
@@ -52,3 +58,18 @@ export async function isEditor(): Promise<boolean> {
 
 /** Back-compat alias for the pre-multi-user admin routes. */
 export const isAdminAuthenticated = isAdmin;
+
+/** Re-issue the editor display hint (see EDITOR_HINT_COOKIE_NAME) from a route
+ * handler that has just verified the real session.
+ *
+ * The hint is what lets cached pages draw the editor sidebar links. It was only
+ * ever set at sign-in, so editors who were already signed in when it was
+ * introduced — sessions last a week — would have lost those links until their
+ * next login. Refreshing it on every editor write means anyone actively
+ * editing gets it back on their next save, and it keeps the hint's role in
+ * step with the account's current one. Route handlers only: a page can't set
+ * cookies. */
+export async function refreshEditorHint(role: SessionPayload["role"]): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.set(EDITOR_HINT_COOKIE_NAME, role, EDITOR_HINT_COOKIE_OPTIONS);
+}
