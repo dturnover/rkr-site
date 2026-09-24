@@ -107,12 +107,38 @@ async function getFacetIndexUncached(
   return entries;
 }
 
-// Cached (medium TTL): a facet value page (e.g. all records on one label) is a
-// heavy scan; cache it, keyed by value + sort/dir/page. Invalidated on import.
+// Cached: a facet value page (e.g. all records on one label) is a heavy scan;
+// cache it, keyed by value + sort/dir/page. Flushed on every write
+// (CATALOGUE_TAG), so the hour is only a backstop, not what keeps it fresh.
 export const getFacetValueRows = unstable_cache(
   getFacetValueRowsUncached,
   ["facet-value-rows"],
-  { tags: [CATALOGUE_TAG], revalidate: 600 },
+  { tags: [CATALOGUE_TAG], revalidate: 3600 },
+);
+
+/** How many records carry one facet value — cached on (facet, value) ALONE.
+ *
+ * This used to be computed inside getFacetValueRows, whose cache key includes
+ * sort, direction and page. So the count was cached once per PAGE: walking the
+ * ~700 pages of a large country re-counted its ~70k rows 700 times over — tens
+ * of millions of rows read to print the same total at the top of every page.
+ * The number doesn't depend on which page you're on, so neither does its
+ * cache entry. */
+const getFacetValueTotal = unstable_cache(
+  async (slug: FacetSlug, value: string): Promise<number> => {
+    const facet = FACETS[slug];
+    const client = await getClient();
+    const res =
+      value === UNKNOWN_VALUE
+        ? await client.execute(`SELECT COUNT(*) AS c FROM records WHERE ${facet.column} IS NULL`)
+        : await client.execute({
+            sql: `SELECT COUNT(*) AS c FROM records WHERE ${facet.column} = ?`,
+            args: [value],
+          });
+    return Number(res.rows[0]?.c ?? 0);
+  },
+  ["facet-value-total"],
+  { tags: [CATALOGUE_TAG], revalidate: 3600 },
 );
 
 async function getFacetValueRowsUncached(
@@ -128,11 +154,7 @@ async function getFacetValueRowsUncached(
     value === UNKNOWN_VALUE ? `${facet.column} IS NULL` : `${facet.column} = ?`;
   const args = value === UNKNOWN_VALUE ? [] : [value];
 
-  const totalRes = await client.execute({
-    sql: `SELECT COUNT(*) AS c FROM records WHERE ${whereClause}`,
-    args,
-  });
-  const total = Number(totalRes.rows[0]?.c ?? 0);
+  const total = await getFacetValueTotal(slug, value);
   const { clause } = buildOrderClause(opts.sort, opts.dir, total);
 
   // Clamp to the last page that actually holds rows. Without this a request

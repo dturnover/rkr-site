@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import TrackDetailCard from "@/components/TrackDetailCard";
 import ReleaseTracks from "@/components/ReleaseTracks";
 import { getRecordById } from "@/lib/queries/records";
 import { deriveReleaseBase, getReleaseSiblings } from "@/lib/releaseGroup";
-import { resolveRecordId } from "@/lib/recordRoute";
+import { canonicalRecordNumberSegment, resolveRecordId } from "@/lib/recordRoute";
 import { FLAG_RECORD_NUMBERS, isEnabled } from "@/lib/settings";
 
 // This page is CACHED, and everything about it is shaped by that.
@@ -32,7 +32,17 @@ export const dynamic = "force-static";
 // Corrections must not wait this out, and they don't: every write path
 // revalidates the record it touched, and an import revalidates the whole route.
 // This window is only the backstop for anything that slips past that.
-export const revalidate = 3600;
+//
+// A day, not an hour. After the window, the next visit regenerates the page —
+// a function invocation plus database reads — and crawlers guarantee a next
+// visit to every one of the 135k. At an hour, a record crawled continuously
+// could be rebuilt 24 times a day for no change in content.
+//
+// Next serves the SHORTEST revalidate of this page and of every data cache its
+// render touches (getRecordById, getRecordIdByNumber, the release siblings),
+// so those are set to a day as well. Lower any one of them and this number
+// stops being what ships — check Cache-Control on a real response.
+export const revalidate = 86400;
 
 // Per-record title/description. Without this every one of the 135k detail
 // pages inherited the site-wide title, so to a search engine they looked like
@@ -46,6 +56,8 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
+  // The page itself redirects loose spellings; don't spend reads titling them.
+  if (canonicalRecordNumberSegment(id)) return {};
   const recordId = await resolveRecordId(id);
   if (recordId == null) return {};
   const record = await getRecordById(recordId);
@@ -88,6 +100,11 @@ export async function generateMetadata({
 
 export default async function RecordPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // "rkr-123" and friends are a real record written loosely — send them to the
+  // one spelling that's cached, rather than rendering and caching a duplicate.
+  // No database read: the canonical form is computed from the text alone.
+  const canonical = canonicalRecordNumberSegment(id);
+  if (canonical) permanentRedirect(`/records/${canonical}`);
   const recordId = await resolveRecordId(id);
   // Null covers both an unreadable segment and a catalogue number whose record
   // is no longer in the catalogue — see getRecordIdByNumber for why an orphaned

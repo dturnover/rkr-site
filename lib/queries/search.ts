@@ -104,7 +104,9 @@ function normalizeCatalogTerm(term: string): string {
 export const keywordSearch = unstable_cache(
   keywordSearchUncached,
   ["keyword-search"],
-  { tags: [CATALOGUE_TAG], revalidate: 60 },
+  // An hour: every edit and import flushes this by tag, so a popular query
+  // re-running against the database every 60 seconds bought no freshness.
+  { tags: [CATALOGUE_TAG], revalidate: 3600 },
 );
 
 async function keywordSearchUncached(
@@ -358,7 +360,9 @@ export function hasAnyField(fields: AdvancedSearchFields): boolean {
 export const advancedSearch = unstable_cache(
   advancedSearchUncached,
   ["advanced-search"],
-  { tags: [CATALOGUE_TAG], revalidate: 60 },
+  // An hour: every edit and import flushes this by tag, so a popular query
+  // re-running against the database every 60 seconds bought no freshness.
+  { tags: [CATALOGUE_TAG], revalidate: 3600 },
 );
 
 async function advancedSearchUncached(

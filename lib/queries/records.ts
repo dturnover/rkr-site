@@ -86,7 +86,11 @@ export const getRecordById = unstable_cache(
     }
   },
   ["record-by-id-v3"],
-  { tags: [CATALOGUE_TAG], revalidate: 3600 },
+  // A day, to match the record page. Next serves the SHORTEST revalidate of a
+  // page and every cache its render touches, so an hour here would silently
+  // cap all 135k record pages at an hour too. Every write flushes this by
+  // tag, so freshness never depended on the window.
+  { tags: [CATALOGUE_TAG], revalidate: 86_400 },
 );
 
 export function hasBSide(r: RecordDetail): boolean {
