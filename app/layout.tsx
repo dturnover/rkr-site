@@ -6,7 +6,6 @@ import SiteSidebar from "@/components/SiteSidebar";
 import SiteFooter from "@/components/SiteFooter";
 import HomeMobileSearch from "@/components/HomeMobileSearch";
 import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 import { SITE_URL } from "@/lib/siteUrl";
 
 // Only the SVG masthead wordmark uses Cinzel now, and only at 700 — headings
@@ -113,12 +112,18 @@ export default function RootLayout({
           <main className="flex-1 min-w-0 w-full">{children}</main>
         </div>
         <SiteFooter />
-        {/* Vercel Web Analytics (visitors/page views) and Speed Insights (real
-            user performance). Both are cookieless and, in production on Vercel,
-            load their script and send beacons SAME-ORIGIN under /_vercel/*, so
-            the strict CSP in next.config.ts needs no production exception. */}
+        {/* Vercel Web Analytics (visitors/page views). Cookieless and, in
+            production on Vercel, loads its script and sends beacons SAME-ORIGIN
+            under /_vercel/*, so the strict CSP in next.config.ts needs no
+            production exception. It's also the only count of real browsers the
+            site has — bots don't run it — which is how bot traffic was told
+            apart from people in the first place.
+
+            Speed Insights was removed deliberately (Sep 2026). Nobody read it,
+            it billed per data point (~$2/mo), and Vercel then announced a $10/mo
+            charge for the "Plus" tier it had been left on. Don't re-add it
+            without deciding someone will actually look at it. */}
         <Analytics />
-        <SpeedInsights />
       </body>
     </html>
   );

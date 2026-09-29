@@ -12,10 +12,10 @@ import type { NextConfig } from "next";
 // the console stays clean, but never in the actual production build.
 const isDev = process.env.NODE_ENV !== "production";
 
-// Vercel Analytics / Speed Insights fetch their script SAME-ORIGIN in
-// production (/_vercel/insights/script.js, /_vercel/speed-insights/script.js)
-// and beacon to /_vercel/insights/event — all covered by 'self', so the
-// production CSP stays strict. Only in dev do they load a debug build from
+// Vercel Analytics fetches its script SAME-ORIGIN in
+// production (/_vercel/insights/script.js)
+// and beacons to /_vercel/insights/event — all covered by 'self', so the
+// production CSP stays strict. Only in dev does it load a debug build from
 // va.vercel-scripts.com, so that host is allowed in dev alone rather than
 // weakening the shipped policy.
 const devScriptHosts = isDev ? " https://va.vercel-scripts.com" : "";
