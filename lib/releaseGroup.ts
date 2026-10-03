@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { RECORD_PAGES_TAG, releaseTag } from "@/lib/cacheTags";
 import { FLAG_RELEASE_GROUPING, isEnabled } from "@/lib/settings";
 
 // Reuniting the sides of a multi-track release.
@@ -57,7 +57,7 @@ function normalize(value: string): string {
 /** The release a row belongs to. Only rows carrying an explicit side marker
  * get one: a bare catalogue number is just a record, and treating it as the
  * base of a release would sweep in anything sharing that number. */
-function releaseKeyOf(labelNumber: string | null | undefined): string | null {
+export function releaseKeyOf(labelNumber: string | null | undefined): string | null {
   const base = deriveReleaseBase(labelNumber);
   return base ? normalize(base) : null;
 }
@@ -245,14 +245,35 @@ export async function findReleaseSiblings(anchor: ReleaseAnchor): Promise<Releas
   return group;
 }
 
-const cachedSiblings = unstable_cache(findReleaseSiblings, ["release-siblings"], {
-  tags: [CATALOGUE_TAG],
-  // A day, to match the record page. Next serves the SHORTEST revalidate of a
-  // page and every cache its render touches, so an hour here would silently
-  // cap all 135k record pages at an hour too. Every write flushes this by
-  // tag, so freshness never depended on the window.
-  revalidate: 86_400,
-});
+/** Cached per release.
+ *
+ * Tagged with the release this record belongs to (plus the whole-set tag for
+ * imports), never the catalogue-wide one: the record pages are built from
+ * this, and Next ties a cached page to every tag its data was read under.
+ * Under CATALOGUE_TAG, saving any record invalidated every record page. A save
+ * now flushes its own release, which is exactly the set of pages that list it
+ * — see RECORD_PAGES_TAG in lib/cacheTags.ts.
+ *
+ * Created per call because the tag has to name the release. The key parts
+ * carry everything the lookup reads from the anchor, so two anchors that could
+ * get different answers never share an entry. A day, to match the record page. */
+function cachedSiblings(anchor: ReleaseAnchor): Promise<ReleaseSibling[]> {
+  const key = releaseKeyOf(anchor.label_number);
+  if (!key) return Promise.resolve([]);
+  return unstable_cache(
+    () => findReleaseSiblings(anchor),
+    [
+      "release-siblings-v2",
+      String(anchor.id),
+      anchor.label_number ?? "",
+      anchor.b_side_label_number ?? "",
+      anchor.label ?? "",
+      anchor.format ?? "",
+      anchor.year ?? "",
+    ],
+    { tags: [RECORD_PAGES_TAG, releaseTag(key)], revalidate: 86_400 }
+  )();
+}
 
 /** What the record page calls.
  *

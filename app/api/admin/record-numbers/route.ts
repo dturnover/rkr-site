@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   try {
     const assigned = await assignMissingRecordNumbers();
     // The detail page's number lookups are cached under this tag.
-    revalidateCatalogue();
+    await revalidateCatalogue();
     return NextResponse.redirect(new URL(`/admin?numbered=${assigned}`, request.url));
   } catch (err) {
     console.error("[record-numbers] assignment failed", err);

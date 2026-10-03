@@ -292,6 +292,27 @@ export async function applyFieldEdits(
   incoming: Partial<Record<EditableField, string | null>>,
   editor: EditorInfo
 ): Promise<number> {
+  return (await applyFieldEditsDetailed(recordId, incoming, editor)).length;
+}
+
+export interface FieldChange {
+  field: EditableField;
+  oldValue: string | null;
+  newValue: string | null;
+}
+
+/** applyFieldEdits, returning WHAT changed rather than how many.
+ *
+ * The caller needs it to decide what to throw out of the cache: a correction
+ * that touches no browse-category field can't change a browse index (those are
+ * full-table GROUP BYs to rebuild — FACET_TAG), and a changed label number
+ * moves the record out of one release and into another, so the OLD release's
+ * pages need flushing too (releaseTag). See lib/cacheTags.ts. */
+export async function applyFieldEditsDetailed(
+  recordId: number,
+  incoming: Partial<Record<EditableField, string | null>>,
+  editor: EditorInfo
+): Promise<FieldChange[]> {
   await ensureOverlayTables();
   const client = await getClient();
 
@@ -300,7 +321,7 @@ export async function applyFieldEdits(
     args: [recordId],
   });
   const current = cur.rows[0] as unknown as Record<EditableField, string | null> | undefined;
-  if (!current) return 0;
+  if (!current) return [];
 
   const key = computeRecordKey(current);
   const isEditorRecord =
@@ -314,7 +335,7 @@ export async function applyFieldEdits(
     const oldValue = nullIfBlank(current[field]);
     if (newValue !== oldValue) changes.push({ field, oldValue, newValue });
   }
-  if (changes.length === 0) return 0;
+  if (changes.length === 0) return [];
 
   const now = new Date().toISOString();
   // A human-readable label for the edits admin view, captured now while we have
@@ -387,7 +408,7 @@ export async function applyFieldEdits(
   }
 
   await client.batch(statements, "write");
-  return changes.length;
+  return changes;
 }
 
 /** Creates a brand-new record (not in dad's file). Inserts it live, stores it
@@ -666,10 +687,13 @@ export async function restoreDeletedRecord(recordKey: string, editor: EditorInfo
  * original value (the stored base) when we can still locate that record, then
  * deletes the edit so it no longer re-applies on import. Returns whether the
  * live record was reverted in place (false just means it'll correct on the next
- * upload). */
-export async function removeFieldEdit(recordKey: string, field: string): Promise<boolean> {
+ * upload), and which record that was. */
+export async function removeFieldEdit(
+  recordKey: string,
+  field: string
+): Promise<{ revertedLive: boolean; recordId: number | null; removedValue: string | null }> {
   await ensureOverlayTables();
-  if (!EDITABLE_FIELDS.includes(field as EditableField)) return false;
+  if (!EDITABLE_FIELDS.includes(field as EditableField)) return { revertedLive: false, recordId: null, removedValue: null };
   const client = await getClient();
 
   const res = await client.execute({
@@ -677,7 +701,7 @@ export async function removeFieldEdit(recordKey: string, field: string): Promise
     args: [recordKey, field],
   });
   const edit = res.rows[0];
-  if (!edit) return false;
+  if (!edit) return { revertedLive: false, recordId: null, removedValue: null };
   const baseValue = edit.base_value == null ? null : String(edit.base_value);
   const recordId = edit.record_id == null ? null : Number(edit.record_id);
 
@@ -718,7 +742,12 @@ export async function removeFieldEdit(recordKey: string, field: string): Promise
   });
 
   await client.batch(statements, "write");
-  return revertedLive;
+  // The id comes back so the caller can drop just this record's cached page.
+  return {
+    revertedLive,
+    recordId: revertedLive ? recordId : null,
+    removedValue: edit.value == null ? null : String(edit.value),
+  };
 }
 
 /** The key a record MOVED TO, worked out from the change that moved it.

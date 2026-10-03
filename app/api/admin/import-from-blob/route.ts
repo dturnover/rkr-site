@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
 
         // Flush all catalogue caches (records, search, browse, status) so the
         // new data is served immediately rather than after each cache's TTL.
-        revalidateCatalogue();
+        await revalidateCatalogue();
 
         // A full diff can span several passes; only delete the uploaded blob
         // once the import is fully complete (later passes re-fetch it).

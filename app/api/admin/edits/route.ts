@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { removeFieldEdit, renameEditor, restoreDeletedRecord } from "@/lib/editor/overlay";
 import { listUsers, setUserDisplayName } from "@/lib/auth/users";
-import { revalidateCatalogue } from "@/lib/cacheTags";
+import { revalidateCatalogue, touchesFacets } from "@/lib/cacheTags";
 
 // Admin-only management of the editor overlay: removing a field override
 // (which reverts the live record to dad's original value when it can still be
@@ -44,8 +44,9 @@ export async function POST(request: NextRequest) {
     if (recordKey) {
       await restoreDeletedRecord(recordKey, { uid: session.uid, name: session.name });
       // Nothing changes on the live site until the next upload re-materialises
-      // the row, but drop the cache anyway so the admin list is accurate.
-      revalidateCatalogue();
+      // the row, and the admin list reads its tables live — no cache holds
+      // anything this touches. This used to call revalidateCatalogue(), the
+      // after-an-import flush, dropping every cached record page in the site.
       return NextResponse.redirect(new URL(`/admin/edits?restored=1`, request.url));
     }
   }
@@ -54,8 +55,19 @@ export async function POST(request: NextRequest) {
     const recordKey = String(form.get("record_key") ?? "");
     const field = String(form.get("field") ?? "");
     if (recordKey && field) {
-      const reverted = await removeFieldEdit(recordKey, field);
-      revalidateCatalogue();
+      const { revertedLive: reverted, recordId, removedValue } = await removeFieldEdit(
+        recordKey,
+        field
+      );
+      // Only the one record changed, and only if it was reverted in place —
+      // otherwise the live row is untouched until the next upload. This used
+      // to flush the entire catalogue, every record page included.
+      if (reverted && recordId != null) {
+        await revalidateCatalogue(recordId, {
+          facetsChanged: touchesFacets([field]),
+          previousLabelNumbers: field === "label_number" ? [removedValue] : [],
+        });
+      }
       return NextResponse.redirect(
         new URL(`/admin/edits?removed=${reverted ? "reverted" : "pending"}`, request.url)
       );

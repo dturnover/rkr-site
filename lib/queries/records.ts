@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { RECORD_PAGES_TAG, recordTag } from "@/lib/cacheTags";
 
 export interface RecordDetail {
   id: number;
@@ -41,13 +41,9 @@ export interface RecordDetail {
   b_side_label_number: string | null;
 }
 
-// Cached: record detail pages are the most-viewed, most-shared pages, so the
-// per-id lookup is served from Next's data cache instead of hitting the DB on
-// every view. Invalidated immediately on any editor edit/import (CATALOGUE_TAG);
-// the 1-hour revalidate is just a safety net. Note: no cookies/headers are read
-// here, which is required for unstable_cache — the session check stays in the page.
-export const getRecordById = unstable_cache(
-  async (id: number): Promise<RecordDetail | null> => {
+// The uncached read; getRecordById below is what callers use. No cookies or
+// headers are read here, which unstable_cache requires.
+async function getRecordByIdUncached(id: number): Promise<RecordDetail | null> {
     const client = await getClient();
     const columns = `r.id, r.record_key, r.artist, r.artist_credit, r.title, r.title_credit,
                      r.matrix_number, r.label_number, r.label, r.country, r.format, r.pressing,
@@ -84,14 +80,29 @@ export const getRecordById = unstable_cache(
       if (res.rows.length === 0) return null;
       return { ...(res.rows[0] as unknown as RecordDetail), catalogue_number: null };
     }
-  },
-  ["record-by-id-v3"],
-  // A day, to match the record page. Next serves the SHORTEST revalidate of a
-  // page and every cache its render touches, so an hour here would silently
-  // cap all 135k record pages at an hour too. Every write flushes this by
-  // tag, so freshness never depended on the window.
-  { tags: [CATALOGUE_TAG], revalidate: 86_400 },
-);
+}
+
+/** One record, cached per record.
+ *
+ * Tagged with THIS record's tag (plus the whole-set tag for imports), never
+ * the catalogue-wide one: Next ties a cached page to every tag its data was
+ * read under, and the record pages are built from this. Under CATALOGUE_TAG,
+ * saving any record invalidated every record page. See RECORD_PAGES_TAG in
+ * lib/cacheTags.ts.
+ *
+ * The cache is created per call because unstable_cache's tags are fixed when
+ * it's created, and they have to name the id. The key parts include the id, so
+ * each record still gets its own entry.
+ *
+ * A day, to match the record page: Next serves the SHORTEST revalidate of a
+ * page and every cache its render touches. Writes flush it by tag, so
+ * freshness never depended on the window. */
+export function getRecordById(id: number): Promise<RecordDetail | null> {
+  return unstable_cache(() => getRecordByIdUncached(id), ["record-by-id-v4", String(id)], {
+    tags: [RECORD_PAGES_TAG, recordTag(id)],
+    revalidate: 86_400,
+  })();
+}
 
 export function hasBSide(r: RecordDetail): boolean {
   return !!(

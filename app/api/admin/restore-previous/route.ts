@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await restorePrevious();
-    revalidateCatalogue();
+    await revalidateCatalogue();
     return NextResponse.redirect(new URL("/admin?restored=1", request.url));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Restore failed";

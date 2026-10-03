@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { CATALOGUE_TAG, TYPOS_TAG } from "@/lib/cacheTags";
 import type { EditableField } from "@/lib/editor/overlay";
 
 // Typo detection is limited to the BOUNDED, categorical fields — the ones whose
@@ -168,21 +168,27 @@ async function detectTyposUncached(): Promise<TypoSuggestion[]> {
   return out;
 }
 
-// Cached under the catalogue tag; apply/dismiss/import invalidate it.
+// Two tags. CATALOGUE_TAG so any edit or import that changes the values
+// refreshes the list; TYPOS_TAG so a dismissal can refresh JUST this list.
+// Dismissing used to flush the catalogue tag and the whole record route, which
+// threw away every cached record page in the site over a change that touches
+// no record at all.
 export const detectTypos = unstable_cache(detectTyposUncached, ["typo-suggestions"], {
-  tags: [CATALOGUE_TAG],
+  tags: [CATALOGUE_TAG, TYPOS_TAG],
   revalidate: 3600,
 });
 
 /** Applies a categorical correction to every record currently holding
  * `current` in `field`, via the shared per-record edit path (so each change is
- * logged, indexed, and survives re-import). Returns how many records changed. */
+ * logged, indexed, and survives re-import). Returns how many fields changed and
+ * which records they were on — the ids are what lets the caller drop just
+ * those record pages from the cache rather than all 135k. */
 export async function applyCategoryCorrection(
   field: TypoField,
   current: string,
   suggested: string,
   editor: { uid: number | "env-admin"; name: string }
-): Promise<number> {
+): Promise<{ changed: number; ids: number[] }> {
   const { applyFieldEdits } = await import("@/lib/editor/overlay");
   const client = await getClient();
   const res = await client.execute({
@@ -190,6 +196,7 @@ export async function applyCategoryCorrection(
     args: [current],
   });
   let changed = 0;
+  const ids: number[] = [];
   for (const row of res.rows) {
     const id = Number((row as unknown as { id: number }).id);
     const n = await applyFieldEdits(
@@ -198,6 +205,7 @@ export async function applyCategoryCorrection(
       editor
     );
     changed += n;
+    if (n > 0) ids.push(id);
   }
-  return changed;
+  return { changed, ids };
 }

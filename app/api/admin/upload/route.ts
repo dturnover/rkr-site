@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const result = await importAndSwap(buffer);
-    revalidateCatalogue();
+    await revalidateCatalogue();
     const params = new URLSearchParams({
       imported: String(result.rowCount),
       warning: result.lowRowCountWarning ? "1" : "0",

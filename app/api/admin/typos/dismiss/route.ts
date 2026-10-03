@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { dismissTypo, TYPO_FIELDS, type TypoField } from "@/lib/typos";
-import { revalidateCatalogue } from "@/lib/cacheTags";
+import { revalidateTag } from "next/cache";
+import { TYPOS_TAG } from "@/lib/cacheTags";
 
 function isTypoField(v: string): v is TypoField {
   return (TYPO_FIELDS as readonly string[]).includes(v);
@@ -28,6 +29,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Refresh the cached suggestion list so the dismissed item drops off.
-  revalidateCatalogue();
+  // Only the suggestion list changes when one is set aside — no record does.
+  // This used to call revalidateCatalogue(), the after-an-import flush, which
+  // dropped every cached record page in the site on each click.
+  revalidateTag(TYPOS_TAG, { expire: 0 });
   return NextResponse.redirect(new URL("/admin/typos?dismissed=1", request.url));
 }

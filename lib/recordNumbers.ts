@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { RECORD_PAGES_TAG } from "@/lib/cacheTags";
 
 // Permanent catalogue numbers — the "RKR-000123" a collector can quote in an
 // email and still have point at the same record a year later.
@@ -169,11 +169,13 @@ const cachedIdByNumber = unstable_cache(
     return id == null ? null : Number(id);
   },
   ["record-id-by-number"],
-  // A day, to match the record page. Next serves the SHORTEST revalidate of a
-  // page and every cache its render touches, so an hour here would silently
-  // cap all 135k record pages at an hour too. Every write flushes this by
-  // tag, so freshness never depended on the window.
-  { tags: [CATALOGUE_TAG], revalidate: 86_400 }
+  // The /records/RKR-… pages read this, so it must not carry CATALOGUE_TAG —
+  // see RECORD_PAGES_TAG in lib/cacheTags.ts. A number only starts pointing at
+  // a different row on an import (changed records get new ids) or a number
+  // assignment run, and both flush the whole set. A deleted record needs no
+  // flush here: the stale id finds no row, and that record's own tag is gone.
+  // A day, to match the record page.
+  { tags: [RECORD_PAGES_TAG], revalidate: 86_400 }
 );
 
 export async function getRecordIdByNumber(n: number): Promise<number | null> {

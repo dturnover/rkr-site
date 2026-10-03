@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL("/records/new?createError=1", request.url));
   }
 
-  revalidateCatalogue(newId, { countChanged: true });
+  await revalidateCatalogue(newId, { countChanged: true });
 
   return NextResponse.redirect(
     new URL(`/records/${newId}/edit?created=${wantsPair ? "pair" : "1"}`, request.url)

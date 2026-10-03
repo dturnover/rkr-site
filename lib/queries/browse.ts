@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
-import { CATALOGUE_TAG } from "@/lib/cacheTags";
+import { CATALOGUE_TAG, FACET_TAG } from "@/lib/cacheTags";
 import { FACETS, type FacetSlug } from "@/lib/facetConfig";
 import { isUncertainValue } from "@/lib/dataQuality";
 import {
@@ -40,12 +40,17 @@ export function isValidLetter(value: string | undefined | null): value is string
  * standard index and turns into a full scan, confirmed by testing: 52s vs
  * 276ms for the same rows).
  */
-// Cached: facet lists change only when the catalogue is re-imported, and the
-// index queries can be heavy. Invalidated on import (CATALOGUE_TAG).
+// Cached, and the index queries are heavy: a GROUP BY over every row for the
+// single-page facets (countries, years, formats, genres), one letter's range
+// for the rest. Tagged FACET_TAG, not CATALOGUE_TAG, so a correction that
+// doesn't touch a browse-category field — a matrix number, a title, a note —
+// no longer throws every one of these away (see lib/cacheTags.ts). A save that
+// does change a category, any create or delete, and any import still flush it
+// at once; the hour is only the backstop.
 export const getFacetIndex = unstable_cache(
   getFacetIndexUncached,
   ["facet-index"],
-  { tags: [CATALOGUE_TAG], revalidate: 3600 },
+  { tags: [FACET_TAG], revalidate: 3600 },
 );
 
 async function getFacetIndexUncached(
@@ -138,7 +143,9 @@ const getFacetValueTotal = unstable_cache(
     return Number(res.rows[0]?.c ?? 0);
   },
   ["facet-value-total"],
-  { tags: [CATALOGUE_TAG], revalidate: 3600 },
+  // FACET_TAG for the same reason as getFacetIndex: a count can only move when
+  // a category field changes or a record is added or removed.
+  { tags: [FACET_TAG], revalidate: 3600 },
 );
 
 async function getFacetValueRowsUncached(
