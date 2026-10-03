@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { FACETS, type FacetSlug } from "@/lib/facetConfig";
-import { RECORDS_PER_SITEMAP, recordIds, sitemapChunkCount } from "@/lib/seo";
+import { recordIdsForChunk, sitemapChunkCount } from "@/lib/seo";
 import { SITE_URL } from "@/lib/siteUrl";
 
 // Rebuild the sitemap at most once a day. The catalogue changes when an admin
@@ -38,7 +38,7 @@ export default async function sitemap({
   id: Promise<string>;
 }): Promise<MetadataRoute.Sitemap> {
   const chunk = Number(await id) || 0;
-  const ids = await recordIds(RECORDS_PER_SITEMAP, chunk * RECORDS_PER_SITEMAP);
+  const ids = await recordIdsForChunk(chunk);
   const records: MetadataRoute.Sitemap = ids.map((rid) => ({
     url: `${SITE_URL}/records/${rid}`,
     changeFrequency: "monthly",

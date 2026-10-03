@@ -116,6 +116,13 @@ function ensureTable(): Promise<void> {
           blocked_until INTEGER NOT NULL
         )
       `);
+      // loadBlocks asks for "blocks still in force" every 30 seconds on every
+      // warm instance. Rows are never deleted (strike history drives the
+      // escalating block lengths), so without this that question scanned
+      // every address ever blocked, forever, twice a minute per instance.
+      await client.execute(
+        `CREATE INDEX IF NOT EXISTS idx_crawl_blocks_until ON crawl_blocks(blocked_until)`
+      );
     })().catch((err) => {
       ensured = null;
       throw err;
