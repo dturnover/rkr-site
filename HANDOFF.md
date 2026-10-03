@@ -130,6 +130,38 @@ once. Catalogue numbers are handed out at the end of every import, so without an
 upload due, the first population needs that button. It is idempotent — pressing it
 twice is safe, and it reports how many it assigned.
 
+## Costs, and measuring the database
+
+Turso invoices (paid a month in arrears): Jul $4.64, Aug $5.99, **Sep $54.99**
+(August: ~49B rows read), **Oct $100.99** (September). Overage runs roughly $1 per
+billion rows read, so the bill is almost entirely rows read. The fixes that should
+collapse it reached production **Sep 22** (record pages cached), **Sep 24**
+(sibling scan, home count, browse totals, search throttle writes) and **Oct 3**
+(one edit no longer invalidating every record page; narrow flushes everywhere). The
+November invoice (October usage) is the first full month on fixed code.
+
+**Read-only database access for Claude.** Environment variables only reach a NEW
+session. Set in the environment's settings:
+- Network access: allow `*.turso.io`.
+- `TURSO_READONLY_URL` — the `libsql://….turso.io` database URL.
+- `TURSO_READONLY_TOKEN` — from `turso db tokens create <db> --read-only`. Never
+  paste it into chat.
+
+Measure with Hrana over HTTP, which reports Turso's own billed counters per
+statement: `POST https://<host>/v2/pipeline` with
+`{"requests":[{"type":"execute","stmt":{"sql":"…","args":[…]}},{"type":"close"}]}`
+and read `results[0].response.result.rows_read`. `@libsql/client` does not expose
+it. First things to measure: every query on `/records/[id]` regeneration, the
+browse index and value pages, keyword search for a broad word, and how many
+uploads / edits a month (`import_history`, `modification_log`) — those decide
+whether the remaining known costs below are worth fixing.
+
+Known costs left, deliberately not fixed pending numbers: deep `OFFSET` on
+`/browse/<facet>/<value>?page=N` (robots-disallowed, crawl-guarded); keyword
+search's trigram match is unbounded for very common words; a diff upload still
+drops all record pages (it could drop only the ids it replaced, but each record
+has two cached addresses to account for).
+
 ## Open work
 
 | Item | Notes |
@@ -140,7 +172,7 @@ twice is safe, and it reports how many it assigned.
 | Bulk "revert all changes by this editor" on `/admin/edits` | Wanted before Markus gets a login. Confirmation with a count. Covers field overrides, created records, deletions. Data model already supports it — everything carries `editor_name`. |
 | Rotate `ADMIN_PASSWORD` in Vercel | **Oldest item, and now the most overdue.** `/admin` is linked publicly in the footer and the current value is known in old chat logs. |
 | Set `ADMIN_DISPLAY_NAME` = `Michael Turner` in Vercel | The bootstrap admin has no users row, so it's credited with whatever email he types at sign-in. |
-| Vercel Firewall rate rule on `/records/*` | **Now the top item — this has actually happened.** Sep 5: a distributed scrape put ~87k requests on `/records/[id]` from thousands of residential IPs across many countries, each pulling different ids with real browser user-agents. It pushed Turso into 429 rate-limiting and produced a 5xx blip. `lib/crawlGuard.ts` did nothing about it and structurally cannot: it counts per IP, and this was a few requests per IP across thousands of them. A **Challenge** rule (not Deny) is the enforcement that works on this shape of traffic, and Vercel's verified-bot bypass keeps Googlebot in. Dashboard-only, so it needs a human. |
+| Vercel Firewall rate rule on `/records/*` | **Still the top item, and still not confirmed done.** Record pages no longer run the crawl guard at all (a cached page runs no code), so this is the only rate limit on them. **This has actually happened.** Sep 5: a distributed scrape put ~87k requests on `/records/[id]` from thousands of residential IPs across many countries, each pulling different ids with real browser user-agents. It pushed Turso into 429 rate-limiting and produced a 5xx blip. `lib/crawlGuard.ts` did nothing about it and structurally cannot: it counts per IP, and this was a few requests per IP across thousands of them. A **Challenge** rule (not Deny) is the enforcement that works on this shape of traffic, and Vercel's verified-bot bypass keeps Googlebot in. Dashboard-only, so it needs a human. |
 | Six dropped Acknowledgements names | Roger Steffens and Penny Reel among them. Waiting on Michael. (Phil Etgart is done — he was already in the contributor list, just not on the editors line.) |
 | Catalogue number changes when a matrix number does | Same root cause as the log dashes above, still unfixed for *numbers*: correcting a matrix number moves the record's key, so it draws a fresh catalogue number and the old one 404s. The log now recovers from this; the numbers do not. See the two deferred rows above. |
 | Editor login for Phil Etgart | He is credited as a contributing editor now, but has no account. Needs his email; Michael can send the invite himself from `/admin`. Unclear whether he wants one. |
@@ -209,11 +241,31 @@ twice is safe, and it reports how many it assigned.
   written to the database and then buried by the day-old answer on the next visit.
   Invalidating the cache on dismissal is the wrong fix: it re-runs the join every
   time. Cache the expensive derivation; apply the cheap per-user state outside it.
-- **Two caches, not one.** `revalidateTag` clears cached DATA; `revalidatePath`
-  clears cached PAGES. Since the record page became static, the tag alone leaves a
-  corrected record serving old HTML. Write paths call `revalidateCatalogue()` from
-  `lib/cacheTags.ts`, which does both — pass a record id for a single-record edit,
-  omit it after an import.
+- **A data tag invalidates every page built from it.** Next ties a cached page to
+  every `unstable_cache` tag its render read, so `revalidateTag(X)` throws away every
+  page that read data under X — not just the data. The record pages used to read
+  under `CATALOGUE_TAG`, which every save revalidates, so **one edit invalidated all
+  135,543 record pages** (verified Oct 3: a matrix fix on record 1 turned 5, 7 and
+  200 into misses). Record-page data now carries only `RECORD_PAGES_TAG`,
+  `record:<id>` and `release:<key>`. **Never put `CATALOGUE_TAG` on anything a
+  record page (or any cached page) reads.** Write paths call `revalidateCatalogue()`
+  / `revalidateRecords()` in `lib/cacheTags.ts`, which pick the narrowest flush —
+  pass the record id(s), plus `countChanged` / `facetsChanged` /
+  `previousLabelNumbers` when they apply.
+- **A record is cached under two addresses** — `/records/123` and
+  `/records/RKR-000123` — and the modification log links to the second. Anything
+  that purges one has to purge both (the per-record tag does this; a delete must
+  read the number before the row goes).
+- **Test cache behaviour on a production build, not by reading code.** Three times
+  now the build output or the code said a page was cached when the response said
+  `no-store`, or said a flush was narrow when it wasn't. `next build && next start`,
+  then `curl -D-` for `x-nextjs-cache` / `Cache-Control`. Wipe `.next` first — a
+  stale `.next/cache` entry has faked results twice.
+- **`master` is what deploys, and only one session should push at a time.** The
+  Sep 2 fix for the full-catalogue sibling scan sat on the working branch, was
+  never merged, and was then wiped by another session's force-push — so the scan
+  ran in production until Sep 24 and is most of September's $100.99 Turso bill.
+  After any fix that matters, check it's actually on `origin/master`.
 - **Never rate-limit Googlebot.** `lib/crawlGuard.ts` exempts search engines before
   counting and fails open. Indexing is the whole competitive advantage.
 - **Michael's data is inconsistent by his own account** — partial matrix numbers in the
