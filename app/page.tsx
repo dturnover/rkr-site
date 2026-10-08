@@ -17,7 +17,7 @@ import DeletedNotice from "@/components/DeletedNotice";
 // last-updated date (getDatabaseStatus). Every write that can change those —
 // create, delete, import, restore — drops both that data and this page via
 // revalidateCatalogue, so the window below is only the backstop.
-export const revalidate = 86400;
+export const revalidate = 604800;
 
 // const TILE_ICONS: Record<string, string> = {
 //   artists: "🎤",

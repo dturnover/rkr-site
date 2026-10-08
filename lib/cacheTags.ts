@@ -78,6 +78,10 @@ export function releaseTag(key: string): string {
   return `release:${key}`;
 }
 
+/** The admin feature switches (lib/settings.ts). Record pages read them, so
+ * flipping a switch revalidates this tag, which drops exactly those pages. */
+export const SETTINGS_TAG = "site-settings";
+
 /** The typo-suggestion list on /admin/typos. Dismissing a suggestion changes
  * only this list, so it flushes only this tag — it used to flush the entire
  * catalogue, every record page included. */

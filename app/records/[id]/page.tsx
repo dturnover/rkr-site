@@ -33,16 +33,21 @@ export const dynamic = "force-static";
 // revalidates the record it touched, and an import revalidates the whole route.
 // This window is only the backstop for anything that slips past that.
 //
-// A day, not an hour. After the window, the next visit regenerates the page —
-// a function invocation plus database reads — and crawlers guarantee a next
-// visit to every one of the 135k. At an hour, a record crawled continuously
-// could be rebuilt 24 times a day for no change in content.
+// A WEEK. After the window, the next visit regenerates the page — a function
+// invocation, database reads, and an ISR write — and crawlers guarantee a next
+// visit to every one of the 135k. Sep 8–Oct 7 billed $7.66 in ISR writes
+// (1.9M) for pages rebuilt with nothing changed: at a day, every page bots
+// reached was rebuilt every day. A shorter window buys no freshness, because
+// every way a page can change already flushes it on the spot — edits by record
+// and release tag, imports the whole set, the admin feature switches
+// SETTINGS_TAG (lib/cacheTags.ts).
 //
 // Next serves the SHORTEST revalidate of this page and of every data cache its
-// render touches (getRecordById, getRecordIdByNumber, the release siblings),
-// so those are set to a day as well. Lower any one of them and this number
-// stops being what ships — check Cache-Control on a real response.
-export const revalidate = 86400;
+// render touches (getRecordById, getRecordIdByNumber, the release siblings,
+// the feature switches), so those are set to a week as well. Lower any one of
+// them and this number stops being what ships — check Cache-Control on a real
+// response.
+export const revalidate = 604800;
 
 // Per-record title/description. Without this every one of the 135k detail
 // pages inherited the site-wide title, so to a search engine they looked like

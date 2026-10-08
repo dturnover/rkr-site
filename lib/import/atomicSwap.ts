@@ -321,7 +321,7 @@ export async function restorePrevious(): Promise<void> {
 //
 // Tagged CATALOGUE_SIZE_TAG rather than CATALOGUE_TAG, so an ordinary field
 // correction no longer throws it away; only a create, delete, import or
-// restore does (see lib/cacheTags.ts). And a day rather than five minutes:
+// restore does (see lib/cacheTags.ts). And a week rather than five minutes:
 // the five-minute window re-ran that full count ~8,600 times a month — on the
 // order of a billion rows read — to print a number that only changes when one
 // of those writes happens, each of which already flushes it immediately.
@@ -336,5 +336,5 @@ export const getDatabaseStatus = unstable_cache(
     };
   },
   ["database-status"],
-  { tags: [CATALOGUE_SIZE_TAG], revalidate: 86_400 },
+  { tags: [CATALOGUE_SIZE_TAG], revalidate: 604_800 },
 );

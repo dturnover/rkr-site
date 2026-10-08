@@ -174,8 +174,8 @@ const cachedIdByNumber = unstable_cache(
   // a different row on an import (changed records get new ids) or a number
   // assignment run, and both flush the whole set. A deleted record needs no
   // flush here: the stale id finds no row, and that record's own tag is gone.
-  // A day, to match the record page.
-  { tags: [RECORD_PAGES_TAG], revalidate: 86_400 }
+  // A week, to match the record page.
+  { tags: [RECORD_PAGES_TAG], revalidate: 604_800 }
 );
 
 export async function getRecordIdByNumber(n: number): Promise<number | null> {

@@ -94,13 +94,13 @@ async function getRecordByIdUncached(id: number): Promise<RecordDetail | null> {
  * it's created, and they have to name the id. The key parts include the id, so
  * each record still gets its own entry.
  *
- * A day, to match the record page: Next serves the SHORTEST revalidate of a
+ * A week, to match the record page: Next serves the SHORTEST revalidate of a
  * page and every cache its render touches. Writes flush it by tag, so
  * freshness never depended on the window. */
 export function getRecordById(id: number): Promise<RecordDetail | null> {
   return unstable_cache(() => getRecordByIdUncached(id), ["record-by-id-v4", String(id)], {
     tags: [RECORD_PAGES_TAG, recordTag(id)],
-    revalidate: 86_400,
+    revalidate: 604_800,
   })();
 }
 

@@ -1,4 +1,6 @@
+import { revalidateTag, unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
+import { SETTINGS_TAG } from "@/lib/cacheTags";
 
 // Switches an admin can throw WITHOUT a deploy.
 //
@@ -72,44 +74,52 @@ function ensureTable(): Promise<void> {
   return ensured;
 }
 
-// Read once every few seconds per instance rather than on every page view —
-// a switch that is almost never touched shouldn't cost a query per request.
-const CACHE_MS = 15_000;
-let cache = new Map<string, boolean>();
-let cachedAt = 0;
-
-async function loadAll(): Promise<Map<string, boolean>> {
-  const now = Date.now();
-  if (now - cachedAt < CACHE_MS && cache.size > 0) return cache;
+async function loadAllUncached(): Promise<Record<string, boolean>> {
   await ensureTable();
   const client = await getClient();
   const res = await client.execute(`SELECT key, value FROM site_settings`);
-  const next = new Map<string, boolean>();
-  for (const key of Object.keys(FLAGS)) next.set(key, FLAGS[key].default);
+  const out: Record<string, boolean> = {};
+  for (const key of Object.keys(FLAGS)) out[key] = FLAGS[key].default;
   for (const r of res.rows) {
     const rr = r as unknown as { key: string; value: string };
-    next.set(String(rr.key), String(rr.value) === "on");
+    out[String(rr.key)] = String(rr.value) === "on";
   }
-  cache = next;
-  cachedAt = now;
-  return cache;
+  return out;
 }
+
+// In Next's shared data cache, under SETTINGS_TAG — not a per-instance memo.
+//
+// The record pages are cached, and some of what they show depends on these
+// switches. Next ties a cached page to every tag its data was read under, so
+// reading the switches under SETTINGS_TAG means flipping one (which
+// revalidates that tag) throws away exactly the pages that read it, on every
+// instance at once. The old per-instance memo had two holes: nothing told the
+// cached pages a switch had moved, so a switch could take as long as the page
+// cache window to show; and each instance re-read on its own 15-second clock,
+// so a page rebuilt on a lagging instance could re-cache the old setting.
+// A switch that's meant to turn a misbehaving feature OFF has to just work.
+//
+// The window is only a backstop; setFlag's caller flushes the tag.
+const loadAll = unstable_cache(loadAllUncached, ["site-settings"], {
+  tags: [SETTINGS_TAG],
+  revalidate: 604_800,
+});
 
 /** Whether a feature is switched on. Falls back to the shipped default if the
  * settings table can't be read, so a database hiccup can't be what turns a
  * working feature off — or, worse, leave it stuck on. */
 export async function isEnabled(key: string): Promise<boolean> {
   try {
-    return (await loadAll()).get(key) ?? FLAGS[key]?.default ?? true;
+    return (await loadAll())[key] ?? FLAGS[key]?.default ?? true;
   } catch {
     return FLAGS[key]?.default ?? true;
   }
 }
 
 export async function getAllFlags(): Promise<Record<string, boolean>> {
-  const map = await loadAll().catch(() => new Map<string, boolean>());
+  const stored = await loadAll().catch((): Record<string, boolean> => ({}));
   const out: Record<string, boolean> = {};
-  for (const key of Object.keys(FLAGS)) out[key] = map.get(key) ?? FLAGS[key].default;
+  for (const key of Object.keys(FLAGS)) out[key] = stored[key] ?? FLAGS[key].default;
   return out;
 }
 
@@ -125,5 +135,7 @@ export async function setFlag(key: string, on: boolean, who: string): Promise<vo
             updated_by = excluded.updated_by`,
     args: [key, on ? "on" : "off", new Date().toISOString(), who],
   });
-  cachedAt = 0; // take effect on the next request, everywhere
+  // Takes effect everywhere at once: the settings, and every cached page that
+  // read them, are tied to this tag.
+  revalidateTag(SETTINGS_TAG, { expire: 0 });
 }

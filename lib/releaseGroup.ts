@@ -256,7 +256,7 @@ export async function findReleaseSiblings(anchor: ReleaseAnchor): Promise<Releas
  *
  * Created per call because the tag has to name the release. The key parts
  * carry everything the lookup reads from the anchor, so two anchors that could
- * get different answers never share an entry. A day, to match the record page. */
+ * get different answers never share an entry. A week, to match the record page. */
 function cachedSiblings(anchor: ReleaseAnchor): Promise<ReleaseSibling[]> {
   const key = releaseKeyOf(anchor.label_number);
   if (!key) return Promise.resolve([]);
@@ -271,7 +271,7 @@ function cachedSiblings(anchor: ReleaseAnchor): Promise<ReleaseSibling[]> {
       anchor.format ?? "",
       anchor.year ?? "",
     ],
-    { tags: [RECORD_PAGES_TAG, releaseTag(key)], revalidate: 86_400 }
+    { tags: [RECORD_PAGES_TAG, releaseTag(key)], revalidate: 604_800 }
   )();
 }
 
