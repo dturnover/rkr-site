@@ -1,4 +1,6 @@
 import ResultsTable from "@/components/ResultsTable";
+import DidYouMean from "@/components/DidYouMean";
+import { suggestForQuery } from "@/lib/queries/nameSuggestions";
 import { keywordSearch, advancedSearch, type AdvancedSearchFields } from "@/lib/queries/search";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
@@ -110,6 +112,12 @@ export default async function SearchPage({
       ? await advancedSearch({ [useField]: q } as AdvancedSearchFields, { sort, dir, page })
       : await keywordSearch(q, { sort, dir, page });
 
+  // Only when the search came back empty: compare the query against the
+  // catalogue's artist/label/producer/riddim names for a likely misspelling.
+  // Costs no query of its own — see lib/queries/nameSuggestions.ts.
+  const suggestions =
+    q.trim() && total === 0 && page === 1 ? await suggestForQuery(q, useField) : [];
+
   return (
     <div>
       {guard.action === "warn" && <CrawlWarning />}
@@ -124,6 +132,7 @@ export default async function SearchPage({
           "Enter a search term above."
         )}
       </p>
+      <DidYouMean suggestions={suggestions} />
       {q.trim() && (
         <ResultsTable
           rows={rows}

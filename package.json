@@ -13,6 +13,7 @@
     "test:moved-key": "tsx scripts/test-moved-key.ts",
     "duplicate-keys": "tsx scripts/duplicate-keys.ts",
     "test:cleared-fields": "tsx scripts/test-cleared-fields.ts",
+    "test:fuzzy": "tsx scripts/test-fuzzy.ts",
     "test:matrix-dismissals": "tsx scripts/test-matrix-dismissals.ts"
   },
   "dependencies": {
