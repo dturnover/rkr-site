@@ -73,6 +73,14 @@ export function recordTag(id: number): string {
   return `record:${id}`;
 }
 
+/** The lookup from a catalogue number to its record (getRecordIdByNumber).
+ * Separate from recordTag because the lookup can be cached BEFORE the number
+ * exists: a visit to /records/RKR-000501 ahead of its assignment caches "no
+ * such record", and assigning 501 has to clear exactly that. */
+export function numberTag(n: number): string {
+  return `record-number:${n}`;
+}
+
 /** `key` is the normalised release base (see releaseKeyOf in lib/releaseGroup.ts). */
 export function releaseTag(key: string): string {
   return `release:${key}`;
@@ -188,7 +196,10 @@ export async function revalidateRecords(
     // the one the modification log links to: the compiler would correct a
     // record, click through from the log to check it, and see it unchanged.
     const { numbers, format } = await catalogueNumbersFor(ids, opts.knownNumbers);
-    for (const n of numbers) revalidatePath(`/records/${format(n)}`);
+    for (const n of numbers) {
+      revalidateTag(numberTag(n), { expire: 0 });
+      revalidatePath(`/records/${format(n)}`);
+    }
   } else {
     // Too many to list (or a whole-catalogue write): drop the set.
     revalidateTag(RECORD_PAGES_TAG, { expire: 0 });

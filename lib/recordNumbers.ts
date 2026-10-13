@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getClient } from "@/lib/db/client";
-import { RECORD_PAGES_TAG } from "@/lib/cacheTags";
+import { RECORD_PAGES_TAG, numberTag } from "@/lib/cacheTags";
 
 // Permanent catalogue numbers — the "RKR-000123" a collector can quote in an
 // email and still have point at the same record a year later.
@@ -88,6 +88,23 @@ export function parseRecordNumber(value: string): number | null {
  * rather than looking randomly shuffled. After that, new records simply take
  * the next numbers up. */
 export async function assignMissingRecordNumbers(): Promise<number> {
+  return (await assignMissingRecordNumbersDetailed()).count;
+}
+
+/** Above this many, listing the affected records isn't worth it: the caller
+ * flushes the whole set instead (the first-ever run, which numbers the entire
+ * catalogue, is the case this is for). */
+const DETAIL_LIMIT = 500;
+
+/** assignMissingRecordNumbers, also reporting WHICH records got a number — so
+ * the "Assign missing numbers" button can refresh just those pages instead of
+ * all 135k. `ids` is null when there were too many to be worth listing.
+ * Records sharing a key (the catalogue has a few duplicates) all show the
+ * number, so every row with an assigned key is included. */
+export async function assignMissingRecordNumbersDetailed(): Promise<{
+  count: number;
+  ids: number[] | null;
+}> {
   await ensureRecordNumbersTable();
   const client = await getClient();
 
@@ -99,6 +116,8 @@ export async function assignMissingRecordNumbers(): Promise<number> {
   const maxRes = await client.execute(`SELECT COALESCE(MAX(number), 0) AS m FROM ${TABLE}`);
   const base = Number(maxRes.rows[0]?.m ?? 0);
 
+  // RETURNING hands back the keys that were numbered in the same statement,
+  // so finding them costs no second pass over the catalogue.
   const res = await client.execute({
     sql: `
       INSERT INTO ${TABLE} (record_key, number, assigned_at)
@@ -110,10 +129,22 @@ export async function assignMissingRecordNumbers(): Promise<number> {
              AND record_key NOT IN (SELECT record_key FROM ${TABLE})
            GROUP BY record_key
         ) AS k
+      RETURNING record_key
     `,
     args: [base, new Date().toISOString()],
   });
-  return Number(res.rowsAffected ?? 0);
+  const keys = res.rows.map((r) => String((r as unknown as { record_key: string }).record_key));
+  if (keys.length === 0) return { count: 0, ids: [] };
+  if (keys.length > DETAIL_LIMIT) return { count: keys.length, ids: null };
+
+  const idRes = await client.execute({
+    sql: `SELECT id FROM records WHERE record_key IN (${keys.map(() => "?").join(", ")})`,
+    args: keys,
+  });
+  return {
+    count: keys.length,
+    ids: idRes.rows.map((r) => Number((r as unknown as { id: number }).id)),
+  };
 }
 
 /** How many records have a number and how many are still waiting — for the
@@ -198,30 +229,32 @@ export async function getRecordNumberStats(): Promise<{ assigned: number; missin
  * which new record the orphaned number "really" means from artist/title/label —
  * would sometimes hand a reader a confidently wrong record, and in a reference
  * work a wrong answer is worse than a missing one. An orphaned number 404s. */
-const cachedIdByNumber = unstable_cache(
-  async (n: number): Promise<number | null> => {
-    const client = await getClient();
-    const res = await client.execute({
-      sql: `SELECT r.id AS id
-              FROM ${TABLE} n
-              JOIN records r ON r.record_key = n.record_key
-             WHERE n.number = ?
-             ORDER BY r.id
-             LIMIT 1`,
-      args: [n],
-    });
-    const id = res.rows[0]?.id;
-    return id == null ? null : Number(id);
-  },
-  ["record-id-by-number"],
-  // The /records/RKR-… pages read this, so it must not carry CATALOGUE_TAG —
-  // see RECORD_PAGES_TAG in lib/cacheTags.ts. A number only starts pointing at
-  // a different row on an import (changed records get new ids) or a number
-  // assignment run, and both flush the whole set. A deleted record needs no
-  // flush here: the stale id finds no row, and that record's own tag is gone.
-  // A week, to match the record page.
-  { tags: [RECORD_PAGES_TAG], revalidate: 604_800 }
-);
+function cachedIdByNumber(n: number): Promise<number | null> {
+  return unstable_cache(
+    async (): Promise<number | null> => {
+      const client = await getClient();
+      const res = await client.execute({
+        sql: `SELECT r.id AS id
+                FROM ${TABLE} n
+                JOIN records r ON r.record_key = n.record_key
+               WHERE n.number = ?
+               ORDER BY r.id
+               LIMIT 1`,
+        args: [n],
+      });
+      const id = res.rows[0]?.id;
+      return id == null ? null : Number(id);
+    },
+    ["record-id-by-number-v2", String(n)],
+    // The /records/RKR-… pages read this, so it must not carry CATALOGUE_TAG —
+    // see RECORD_PAGES_TAG in lib/cacheTags.ts. A number starts pointing at a
+    // different row on an import (changed records get new ids), which flushes
+    // the whole set. It also carries its own number's tag, because it can be
+    // cached BEFORE the number is assigned ("no such record") — assigning the
+    // number flushes exactly that tag. A week, to match the record page.
+    { tags: [RECORD_PAGES_TAG, numberTag(n)], revalidate: 604_800 }
+  )();
+}
 
 export async function getRecordIdByNumber(n: number): Promise<number | null> {
   // The catch is deliberately OUTSIDE the cached function. With it inside, a
