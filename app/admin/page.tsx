@@ -12,6 +12,7 @@ import FeatureSwitches from "@/components/FeatureSwitches";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
 import BlobUploadForm from "@/components/BlobUploadForm";
 import CopyLink from "@/components/CopyLink";
+import LocalTime from "@/components/LocalTime";
 
 // robots.txt asks crawlers not to fetch this path, but that only works for
 // crawlers that read it — and a URL that leaks some other way (a referrer, a
@@ -254,7 +255,7 @@ export default async function AdminPage({
           <div>
             <dt className="inline text-ink-soft">Last updated: </dt>
             <dd className="inline text-ink">
-              {status.lastUpdated ? new Date(status.lastUpdated).toLocaleString() : "never"}
+              {status.lastUpdated ? <LocalTime iso={status.lastUpdated} /> : "never"}
             </dd>
           </div>
         </dl>

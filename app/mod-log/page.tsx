@@ -7,15 +7,21 @@ import { getSession } from "@/lib/auth/requireAdmin";
 import { getGlobalLog, parseLogFilter, type GlobalLogEntry, type LogFilter } from "@/lib/editor/overlay";
 import { parsePage } from "@/lib/queries/shared";
 import { toURLSearchParams, first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import LocalTime from "@/components/LocalTime";
 
 // Editor-only page: names and edit history should never be search-indexed.
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
 };
 
-function formatWhen(iso: string): string {
+// For the review tick's tooltip, which is plain text and so can't hold the
+// browser-side <LocalTime>. Labelled UTC so it's never read as local time —
+// unlabelled server times are how "8:50 PM" came to show as "12:50 AM".
+function formatWhenUtc(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+  return Number.isNaN(d.getTime())
+    ? iso
+    : `${d.toLocaleString("en-US", { timeZone: "UTC" })} UTC`;
 }
 
 // The review filters are the compiler's own workflow; an editor only cares
@@ -165,7 +171,7 @@ export default async function ModLogPage({
                               title={
                                 reviewed
                                   ? `Reviewed by ${e.reviewed_by ?? "you"}${
-                                      e.reviewed_at ? ` on ${formatWhen(e.reviewed_at)}` : ""
+                                      e.reviewed_at ? ` on ${formatWhenUtc(e.reviewed_at)}` : ""
                                     } — click to un-tick`
                                   : "Mark as reviewed"
                               }
@@ -182,7 +188,7 @@ export default async function ModLogPage({
                         </td>
                       )}
                       <td className="px-3 py-2 align-top whitespace-nowrap text-ink-soft">
-                        {formatWhen(e.created_at)}
+                        <LocalTime iso={e.created_at} />
                       </td>
                       <td className="px-3 py-2 align-top font-body break-words">
                         <ChangeCell e={e} />

@@ -4,15 +4,11 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { listCrawlBlocks } from "@/lib/crawlGuard";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import LocalTime from "@/components/LocalTime";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
 };
-
-function when(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-}
 
 export default async function TrafficPage({
   searchParams,
@@ -86,7 +82,7 @@ export default async function TrafficPage({
                       )}
                     </td>
                     <td className="px-3 py-2 text-ink-soft">{b.strikes}</td>
-                    <td className="px-3 py-2 text-ink-soft text-xs">{when(b.last_seen)}</td>
+                    <td className="px-3 py-2 text-ink-soft text-xs"><LocalTime iso={b.last_seen} /></td>
                     <td className="px-3 py-2 text-ink-soft text-xs break-all max-w-xs">
                       {b.user_agent || <span className="italic">not given</span>}
                     </td>

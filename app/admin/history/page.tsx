@@ -3,15 +3,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { listImports } from "@/lib/import/importHistory";
+import LocalTime from "@/components/LocalTime";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
 };
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-}
 
 export default async function ImportHistoryPage() {
   const session = await getSession();
@@ -58,7 +54,7 @@ export default async function ImportHistoryPage() {
             <tbody className="font-body">
               {imports.map((imp, i) => (
                 <tr key={imp.id} className={`border-b border-paper-stain/60 ${i % 2 ? "bg-parchment/30" : ""}`}>
-                  <td className="px-3 py-2 align-top text-ink whitespace-nowrap">{fmtDate(imp.created_at)}</td>
+                  <td className="px-3 py-2 align-top text-ink whitespace-nowrap"><LocalTime iso={imp.created_at} /></td>
                   <td className="px-3 py-2 align-top text-right text-rasta-green">
                     +{imp.inserted_count.toLocaleString()}
                   </td>

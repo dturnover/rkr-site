@@ -4,6 +4,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { listFieldEdits, listDeletedRecords, listEditorNames } from "@/lib/editor/overlay";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import LocalTime from "@/components/LocalTime";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
@@ -232,7 +233,7 @@ export default async function EditsPage({
                     {d.record_label || <span className="text-ink-soft text-xs">{d.record_key}</span>}
                   </td>
                   <td className="px-3 py-2 text-ink-soft text-xs">
-                    {new Date(d.deleted_at).toLocaleString()}
+                    <LocalTime iso={d.deleted_at} />
                   </td>
                   <td className="px-3 py-2 text-ink-soft text-xs">{d.editor_name ?? dash}</td>
                   <td className="px-3 py-2">

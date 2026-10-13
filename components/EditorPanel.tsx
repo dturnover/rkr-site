@@ -5,11 +5,7 @@ import EditorRecordForm from "./EditorRecordForm";
 import { hasFlipSide } from "@/lib/editor/flipSide";
 import type { StubMismatch } from "@/lib/releaseGroup";
 import type { BSideEntry } from "@/lib/queries/bSideEntry";
-
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-}
+import LocalTime from "@/components/LocalTime";
 
 function logLine(e: LogEntry): string {
   if (e.action === "new") return "Created this record";
@@ -83,7 +79,7 @@ export default function EditorPanel({
                 <p className="text-ink">{n.note}</p>
                 <p className="text-ink-soft text-xs mt-0.5">
                   {n.note_by ?? "the compiler"}
-                  {n.note_at ? `, ${formatWhen(n.note_at)}` : ""} &mdash; on &ldquo;{logLine(n)}
+                  {n.note_at ? <>, <LocalTime iso={n.note_at} /></> : ""} &mdash; on &ldquo;{logLine(n)}
                   &rdquo;
                 </p>
               </li>
@@ -238,7 +234,7 @@ export default function EditorPanel({
           <ul className="space-y-1.5 font-body text-sm">
             {log.map((e) => (
               <li key={e.id} className="break-words">
-                <span className="text-ink-soft">{formatWhen(e.created_at)}</span>{" "}
+                <span className="text-ink-soft"><LocalTime iso={e.created_at} /></span>{" "}
                 <span className="text-ink">— {logLine(e)}</span>{" "}
                 {e.editor_name && <span className="text-ink-soft">({e.editor_name})</span>}
                 {e.reviewed_at && (

@@ -8,6 +8,7 @@ import {
   type MatrixMismatch,
 } from "@/lib/queries/matrixMismatches";
 import { first, type RawSearchParams } from "@/lib/searchParamsUtil";
+import LocalTime from "@/components/LocalTime";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
@@ -171,7 +172,7 @@ export default async function MatrixMismatchPage({
                   <td className="px-3 py-2 font-mono text-xs text-ink-soft">{d.own_matrix}</td>
                   <td className="px-3 py-2 font-mono text-xs text-ink-soft">{d.stub_matrix}</td>
                   <td className="px-3 py-2 text-ink-soft text-xs">
-                    {new Date(d.dismissed_at).toLocaleDateString()}
+                    <LocalTime iso={d.dismissed_at} dateOnly />
                     {d.dismissed_by ? ` · ${d.dismissed_by}` : ""}
                   </td>
                   <td className="px-3 py-2 sticky right-0 bg-paper border-l border-paper-stain">
@@ -209,7 +210,7 @@ export default async function MatrixMismatchPage({
             <p className="font-body text-sm text-ink-soft">
               {computedAt ? (
                 <>
-                  Checked {new Date(computedAt).toLocaleString()}. Corrections you have made since
+                  Checked <LocalTime iso={new Date(computedAt).toISOString()} />. Corrections you have made since
                   then still appear until you run it again.
                 </>
               ) : null}

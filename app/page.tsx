@@ -7,6 +7,7 @@ import GuideContent from "@/components/GuideContent";
 import StudioPhoto from "@/components/StudioPhoto";
 import { PROSE_CLASS } from "@/components/ProsePage";
 import DeletedNotice from "@/components/DeletedNotice";
+import LocalTime from "@/components/LocalTime";
 
 // Cached, like the record pages. This used to be force-dynamic — a function
 // invocation on every visit to the most-visited page after the records — only
@@ -57,9 +58,14 @@ export default async function Home() {
         {status.hasDatabase && (
           <p className="font-body text-xs text-ink-soft text-center mt-3">
             {status.rowCount.toLocaleString()} tracks in the catalogue
-            {status.lastUpdated
-              ? ` · last updated ${new Date(status.lastUpdated).toLocaleDateString()}`
-              : ""}
+            {status.lastUpdated ? (
+              <>
+                {" "}
+                · last updated <LocalTime iso={status.lastUpdated} dateOnly />
+              </>
+            ) : (
+              ""
+            )}
           </p>
         )}
       </section>

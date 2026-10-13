@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/auth/requireAdmin";
 import { listContactMessages, contactRecipient } from "@/lib/contact";
+import LocalTime from "@/components/LocalTime";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
@@ -68,7 +69,7 @@ export default async function MessagesPage() {
                   </a>
                 </div>
                 <div className="font-body text-xs text-ink-soft">
-                  {new Date(m.created_at).toLocaleString()}
+                  <LocalTime iso={m.created_at} />
                   {!m.emailed && (
                     <span className="ml-2 text-error uppercase tracking-wide">not emailed</span>
                   )}
