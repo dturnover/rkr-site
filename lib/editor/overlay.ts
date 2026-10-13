@@ -1,7 +1,7 @@
 import { getClient } from "@/lib/db/client";
 import { CATALOG_FTS_COLUMNS } from "@/lib/db/ddl";
 import { PAGE_SIZE } from "@/lib/queries/shared";
-import { getNumbersForRecordIds } from "@/lib/recordNumbers";
+import { assignRecordNumber, getNumbersForRecordIds } from "@/lib/recordNumbers";
 
 // The editor overlay: everything editors change lives here, in tables OUTSIDE
 // the import-swap set, so it survives every CSV upload and is re-applied on
@@ -468,6 +468,16 @@ export async function createRecord(
   ];
 
   await client.batch(statements, "write");
+
+  // Its catalogue number now, not at the next upload — otherwise a new record
+  // shows no number and the modification log falls back to the raw row id.
+  // Outside the batch on purpose: a failure here must not undo the record,
+  // and "Assign missing numbers" on /admin catches anything left over.
+  try {
+    await assignRecordNumber(key);
+  } catch {
+    // no number yet; see above
+  }
   return newId;
 }
 

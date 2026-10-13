@@ -119,6 +119,51 @@ export async function assignMissingRecordNumbers(): Promise<number> {
 /** How many records have a number and how many are still waiting — for the
  * admin page, so the compiler can see the feature is actually populated
  * rather than having to take it on trust. */
+/** Give one record its catalogue number now, rather than at the next upload.
+ *
+ * For records editors create on the site. Numbers were only ever handed out at
+ * the end of an import (or by "Assign missing numbers" on /admin), so a record
+ * added between uploads had none: its page showed no number, and the
+ * modification log fell back to the raw row id ("#168994") — which is exactly
+ * the kind of number this table exists to replace, since a row id moves.
+ *
+ * Same allocation as assignMissingRecordNumbers — read the high-water mark,
+ * take the next — for one key. Two creations at the same instant could both
+ * read the same mark; the UNIQUE constraint on `number` rejects the second, and
+ * it simply tries again with a fresh mark. A key that already has a number
+ * keeps it (ON CONFLICT DO NOTHING): numbers are never reissued.
+ *
+ * Returns the number, or null if it couldn't be assigned — the caller treats
+ * that as "no number yet", which "Assign missing numbers" will fill later. */
+export async function assignRecordNumber(recordKey: string): Promise<number | null> {
+  if (!recordKey) return null;
+  await ensureRecordNumbersTable();
+  const client = await getClient();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const existing = await client.execute({
+      sql: `SELECT number FROM ${TABLE} WHERE record_key = ? LIMIT 1`,
+      args: [recordKey],
+    });
+    if (existing.rows[0]?.number != null) return Number(existing.rows[0].number);
+    const maxRes = await client.execute(`SELECT COALESCE(MAX(number), 0) AS m FROM ${TABLE}`);
+    const next = Number(maxRes.rows[0]?.m ?? 0) + 1;
+    try {
+      await client.execute({
+        sql: `INSERT INTO ${TABLE} (record_key, number, assigned_at) VALUES (?, ?, ?)
+              ON CONFLICT(record_key) DO NOTHING`,
+        args: [recordKey, next, new Date().toISOString()],
+      });
+    } catch {
+      continue; // someone else took `next` in the meantime — read a fresh mark
+    }
+  }
+  const final = await client.execute({
+    sql: `SELECT number FROM ${TABLE} WHERE record_key = ? LIMIT 1`,
+    args: [recordKey],
+  });
+  return final.rows[0]?.number == null ? null : Number(final.rows[0].number);
+}
+
 export async function getRecordNumberStats(): Promise<{ assigned: number; missing: number }> {
   await ensureRecordNumbersTable();
   const client = await getClient();
