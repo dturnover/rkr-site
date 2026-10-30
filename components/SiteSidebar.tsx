@@ -37,6 +37,21 @@ export default function SiteSidebar() {
       aria-label="Browse categories"
       className="shrink-0 border-b-2 lg:border-b-0 lg:border-r-2 border-frame bg-parchment-deep/40 lg:bg-transparent lg:w-44 lg:sticky lg:top-6 lg:self-start"
     >
+      {/* Advanced Search first, in a box of its own. The compiler uses it more
+          than any other way into the catalogue, and on a phone — where this
+          list wraps across the top of every page — it used to come after all
+          nine browse categories, so reaching it meant scrolling past them. */}
+      <div className="px-4 sm:px-6 lg:px-0 lg:pr-4 pt-3 lg:pt-0 lg:mb-3">
+        <Link
+          href="/advanced-search"
+          aria-current={pathname === "/advanced-search" ? "page" : undefined}
+          className={`block border-2 border-frame px-3 py-2 text-center font-body text-sm font-semibold tracking-wide transition-colors hover:bg-parchment-deep hover:text-rasta-red ${
+            pathname === "/advanced-search" ? "bg-parchment-deep text-rasta-red" : "bg-paper text-ink"
+          }`}
+        >
+          Advanced Search
+        </Link>
+      </div>
       <ul className="flex flex-wrap lg:flex-col gap-x-5 gap-y-2 lg:gap-y-1 font-body text-sm px-4 sm:px-6 lg:px-0 lg:pr-4 py-3 lg:py-0">
         {FACET_ORDER.map((slug) => {
           // "Advanced Search" was permanently bold regardless of the current
@@ -64,18 +79,6 @@ export default function SiteSidebar() {
             </li>
           );
         })}
-        <li className="lg:mt-2 lg:pt-2 lg:border-t lg:border-paper-stain">
-          <Link
-            href="/advanced-search"
-            aria-current={pathname === "/advanced-search" ? "page" : undefined}
-            className={`block underline decoration-paper-stain decoration-2 underline-offset-4 lg:no-underline lg:hover:underline lg:py-1 font-semibold hover:text-rasta-red ${
-              pathname === "/advanced-search" ? "text-rasta-red" : "text-ink"
-            }`}
-          >
-            Advanced Search
-          </Link>
-        </li>
-
         {ABOUT_LINKS.map((link, i) => (
           <li
             key={link.href}
