@@ -15,10 +15,30 @@ import { getClient } from "@/lib/db/client";
 //   email:<addr>  — throttles many sources hammering ONE account, which the
 //                   IP key alone can't catch (a distributed guess spread over
 //                   many addresses looked like one failure each).
+//   bootstrap     — ONE site-wide counter for the ADMIN_PASSWORD fallback. That
+//                   password grants admin whatever email is typed (even none),
+//                   so neither key above sees a botnet sending one guess per
+//                   address with a blank or random email. Every failed login
+//                   is also a wrong guess at it, so every failure counts here.
+//                   When it trips, ONLY the ADMIN_PASSWORD path is refused:
+//                   editors and admins with their own accounts still sign in,
+//                   so an attacker can at worst make the bootstrap login wait
+//                   out the lockout, never shut the editors out.
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
 const LOCKOUT_MS = 15 * 60 * 1000;
+
+/** The site-wide key for the ADMIN_PASSWORD fallback — see the header. */
+export const BOOTSTRAP_KEY = "bootstrap";
+// Higher than the per-key limit because everyone's typos land on it, low
+// enough that the whole internet together gets at most ~1,000 guesses a day
+// (10 per 15-minute lockout) at the one password that needs no email.
+const BOOTSTRAP_MAX_ATTEMPTS = 10;
+
+function maxAttemptsFor(key: string): number {
+  return key === BOOTSTRAP_KEY ? BOOTSTRAP_MAX_ATTEMPTS : MAX_ATTEMPTS;
+}
 
 let ensured: Promise<void> | null = null;
 
@@ -93,7 +113,7 @@ export async function recordFailure(keys: string[]): Promise<void> {
         {
           sql: `UPDATE login_attempts SET locked_until = ?
                 WHERE key = ? AND failures >= ? AND locked_until <= ?`,
-          args: [now + LOCKOUT_MS, key, MAX_ATTEMPTS, now],
+          args: [now + LOCKOUT_MS, key, maxAttemptsFor(key), now],
         },
       ]),
       "write"

@@ -9,7 +9,13 @@ import {
   EDITOR_HINT_COOKIE_OPTIONS,
 } from "@/lib/auth/session";
 import { verifyCredentials } from "@/lib/auth/users";
-import { isLockedOut, recordFailure, recordSuccess, loginKeys } from "@/lib/auth/loginRateLimit";
+import {
+  BOOTSTRAP_KEY,
+  isLockedOut,
+  recordFailure,
+  recordSuccess,
+  loginKeys,
+} from "@/lib/auth/loginRateLimit";
 import { isBodyTooLarge, LOGIN_BODY_MAX_BYTES } from "@/lib/http/bodySizeGuard";
 
 function clientIp(request: NextRequest): string {
@@ -45,6 +51,13 @@ export async function POST(request: NextRequest) {
       session = { uid: user.id, role: user.role, name: user.display_name, ep: user.session_epoch };
     }
   }
+  // The fallback is refused outright while its site-wide counter is locked
+  // (see BOOTSTRAP_KEY). Checked only when needed, so a normal editor login
+  // costs no extra read. The message is "too many attempts" whether or not the
+  // password was right — it must not tell a guesser which one it was.
+  if (!session && (await isLockedOut([BOOTSTRAP_KEY]))) {
+    return NextResponse.redirect(new URL("/admin?error=too-many-attempts", request.url));
+  }
   if (!session && checkAdminPassword(password)) {
     // The bootstrap admin has no users row to carry a display name, so without
     // ADMIN_DISPLAY_NAME every change it makes is attributed to whatever was
@@ -58,7 +71,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!session) {
-    await recordFailure(keys);
+    await recordFailure([...keys, BOOTSTRAP_KEY]);
     return NextResponse.redirect(new URL("/admin?error=invalid-password", request.url));
   }
   await recordSuccess(keys);

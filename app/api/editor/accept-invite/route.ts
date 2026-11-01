@@ -23,10 +23,10 @@ export async function POST(request: NextRequest) {
 
   const invite = token ? await getInvite(token) : null;
   if (!invite || !isInviteUsable(invite)) {
-    return NextResponse.redirect(new URL(`/join/${token}?error=expired`, request.url));
+    return NextResponse.redirect(new URL(`/join/${encodeURIComponent(token)}?error=expired`, request.url));
   }
   if (password.length < 8) {
-    return NextResponse.redirect(new URL(`/join/${token}?error=weak`, request.url));
+    return NextResponse.redirect(new URL(`/join/${encodeURIComponent(token)}?error=weak`, request.url));
   }
 
   let session: { uid: number; role: "admin" | "editor"; name: string; ep: number };
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const user = await setPasswordByEmail(invite.email, password);
     if (!user) {
       // Account disabled or removed since the link was issued.
-      return NextResponse.redirect(new URL(`/join/${token}?error=expired`, request.url));
+      return NextResponse.redirect(new URL(`/join/${encodeURIComponent(token)}?error=expired`, request.url));
     }
     session = { uid: user.id, role: user.role, name: user.display_name, ep: user.session_epoch };
   } else {
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         await markInviteAccepted(token);
         return NextResponse.redirect(new URL("/admin?error=unauthorized", request.url));
       }
-      return NextResponse.redirect(new URL(`/join/${token}?error=weak`, request.url));
+      return NextResponse.redirect(new URL(`/join/${encodeURIComponent(token)}?error=weak`, request.url));
     }
     session = { uid: created.id, role: "editor", name: invite.display_name, ep: 0 };
   }
